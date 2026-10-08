@@ -1,0 +1,44 @@
+# public/.htaccess for olympiad.brilliant-edc.uz — Laravel API + registration website.
+# /api/* (and other Laravel endpoints) go to index.php; every other path that is
+# not a real file is served by the website (index.html), which handles its own routes
+# such as /register, /login, /email-verified, /reset-password and the organisers' panel.
+<IfModule mod_rewrite.c>
+    <IfModule mod_negotiation.c>
+        Options -MultiViews -Indexes
+    </IfModule>
+
+    RewriteEngine On
+
+    # Handle Authorization Header
+    RewriteCond %{HTTP:Authorization} .
+    RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+    # Handle X-XSRF-Token Header
+    RewriteCond %{HTTP:x-xsrf-token} .
+    RewriteRule .* - [E=HTTP_X_XSRF_TOKEN:%{HTTP:X-XSRF-Token}]
+
+    # Laravel: API and framework endpoints. The pattern is relative to public/:
+    # the project-root .htaccess rewrites every request into public/, so REQUEST_URI
+    # here starts with /public and must not be used for matching.
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteRule ^(api|sanctum|up|storage)(/.*)?$ index.php [L,NC]
+
+    # Website start page
+    RewriteRule ^$ index.html [L]
+
+    # Real files and folders (styles, scripts, api-docs, ...)
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # Everything else: the registration website
+    RewriteRule ^ index.html [L]
+</IfModule>
+
+<IfModule mod_headers.c>
+    Header always set X-Content-Type-Options "nosniff"
+    Header always set Referrer-Policy "same-origin"
+    <FilesMatch "\.(html|js|css)$">
+        Header set Cache-Control "no-cache"
+    </FilesMatch>
+</IfModule>

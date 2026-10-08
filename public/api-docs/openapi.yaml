@@ -1,0 +1,1386 @@
+openapi: 3.0.3
+info:
+  title: IAO 2026 Registration API
+  version: 1.0.0
+  description: 'IAO 2026 (XXX Xalqaro astronomiya olimpiadasi, Andijon, 6–14 dekabr 2026) ro''yxatdan o''tish API''si.
+
+
+    **Oqim:** `register` → emailni tasdiqlash → `participants` qo''shish → `team/submit` (yakuniy yuborish; jamoa qulflanadi).
+
+
+    **Autentifikatsiya:** `Authorization: Bearer <token>` (Laravel Sanctum). Barcha so''rovlarda `Accept: application/json` yuboring.
+
+
+    **Umumiy xatolar:** 401 — token yo''q; 403 — ruxsat yo''q; 404 — topilmadi (boshqa jamoa ma''lumoti ham 404); 409 — email tasdiqlanmagan;
+
+    422 — validatsiya; 423 — jamoa yuborilgan yoki muddat tugagan; 429 — juda ko''p so''rov.
+
+
+    **Sanalar:** `KK.OO.YYYY`. **Fayl yuklash:** `multipart/form-data`. Fayl bilan *yangilash* uchun `POST` yuboring va `_method=PATCH` maydonini
+    qo''shing
+
+    (PHP multipart PATCH/PUT ni o''qimaydi). Faylsiz yangilash uchun oddiy JSON `PATCH` ishlaydi.'
+servers:
+- url: '{baseUrl}/api'
+  variables:
+    baseUrl:
+      default: http://localhost:8000
+tags:
+- name: Auth
+- name: Team
+- name: Participants
+- name: Admin
+- name: Meta
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: '`register` yoki `login` qaytargan token'
+  schemas:
+    User:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        email_verified_at:
+          type: string
+          format: date-time
+          nullable: true
+        is_admin:
+          type: boolean
+        team:
+          $ref: '#/components/schemas/Team'
+    Team:
+      type: object
+      properties:
+        id:
+          type: integer
+        user_id:
+          type: integer
+        country:
+          type: string
+          example: Uganda
+        submitted_at:
+          type: string
+          format: date-time
+          nullable: true
+    Participant:
+      type: object
+      properties:
+        id:
+          type: integer
+          example: 1
+        status:
+          type: string
+          enum: &id001
+          - team_leader
+          - team_leader_jury
+          - observer
+          - student
+          description: Maqomi
+        student_group:
+          type: string
+          enum: &id002
+          - alpha
+          - beta
+          - gamma
+          nullable: true
+          description: Guruh. `status=student` bo'lsa majburiy
+        previous_prizewinner:
+          type: boolean
+          default: false
+          description: Oldingi IAO I–II diplom sovrindori
+        needs_visa_invitation:
+          type: boolean
+          default: false
+          description: Viza taklifnomasi kerakmi
+        family_name_en:
+          type: string
+          description: 1.1 Familiya (inglizcha). Faqat 26 ta lotin harfi; faqat BOSH HARFLARDA yozish rad etiladi
+          maxLength: 100
+          example: Okello
+        first_name_en:
+          type: string
+          description: 1.2 Ism (inglizcha). Faqat 26 ta lotin harfi; faqat BOSH HARFLARDA yozish rad etiladi
+          maxLength: 100
+          example: Peter James
+        family_name_native:
+          type: string
+          maxLength: 100
+          example: Окелло
+          description: 2.1 Familiya (ona tilida, istalgan yozuv)
+        first_name_native:
+          type: string
+          maxLength: 100
+          example: Питер Джеймс
+          description: 2.2 Ism (ona tilida)
+        birth_date:
+          type: string
+          pattern: ^\d{2}\.\d{2}\.\d{4}$
+          example: 12.05.2009
+          description: 3 Tug'ilgan sana, KK.OO.YYYY (bugundan oldin)
+        birth_place:
+          type: string
+          maxLength: 255
+          example: Kampala, Uganda
+          description: 4 Tug'ilgan joy
+        sex:
+          type: string
+          enum: &id003
+          - male
+          - female
+          description: 5 Jinsi
+        citizenship:
+          type: string
+          example: Ugandan
+          description: 6.1 Hozirgi fuqarolik
+        other_citizenships:
+          type: string
+          nullable: true
+          description: 6.2 Avvalgi/qo'shimcha fuqaroliklar
+        ethnicity:
+          type: string
+          nullable: true
+          description: 6.3 Millati
+        previous_visits_uz:
+          type: string
+          nullable: true
+          maxLength: 1000
+          description: 6.4 O'zbekistonga avvalgi tashriflar
+        passport_number:
+          type: string
+          nullable: true
+          maxLength: 50
+          example: B1234567
+          description: 8.1 Pasport raqami (butun tizimda noyob). Faqat `needs_visa_invitation=true` bo'lsa majburiy.
+        passport_issue_date:
+          type: string
+          pattern: ^\d{2}\.\d{2}\.\d{4}$
+          example: 12.05.2009
+          nullable: true
+          description: 8.2 Berilgan sana (bugun yoki oldin). Faqat `needs_visa_invitation=true` bo'lsa majburiy.
+        passport_expiry_date:
+          type: string
+          pattern: ^\d{2}\.\d{2}\.\d{4}$
+          example: 12.05.2009
+          nullable: true
+          description: 8.3 Amal qilish muddati (kelajakda). Faqat `needs_visa_invitation=true` bo'lsa majburiy.
+        passport_issued_by:
+          type: string
+          nullable: true
+          maxLength: 255
+          description: 8.4 Pasportni bergan organ. Faqat `needs_visa_invitation=true` bo'lsa majburiy.
+        has_passport_scan:
+          type: boolean
+        has_face_photo:
+          type: boolean
+        position:
+          type: string
+          maxLength: 255
+          example: Student
+          description: 9 Lavozimi (talaba, o'qituvchi...)
+        org_name:
+          type: string
+          maxLength: 255
+          description: 10.1 Ish/o'qish tashkilotining nomi
+        org_location:
+          type: string
+          maxLength: 255
+          description: 10.2 Tashkilot joylashgan joy
+        org_address:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: 10.3 Tashkilot manzili (indeks bilan). Faqat `needs_visa_invitation=true` bo'lsa majburiy.
+        org_contacts:
+          type: string
+          nullable: true
+          maxLength: 500
+          description: 10.4 Faks, telefon, email. Faqat `needs_visa_invitation=true` bo'lsa majburiy.
+        graduation_date:
+          type: string
+          nullable: true
+          maxLength: 50
+          example: June 2027
+          description: 10.5 Tamomlash oy/yili
+        previous_olympiads:
+          type: string
+          nullable: true
+          maxLength: 1000
+          example: 'IAO-2025: Diploma of participating'
+          description: 10.6 Avval qatnashgan IAO/APAO
+        home_location:
+          type: string
+          maxLength: 255
+          description: 11.1 Yashash joyi
+        home_address:
+          type: string
+          maxLength: 500
+          description: 11.2 Doimiy manzil
+        home_phone:
+          type: string
+          nullable: true
+          maxLength: 100
+          description: 11.3 Uy telefoni
+        mobile_phone:
+          type: string
+          maxLength: 100
+          example: '+256700000000'
+          description: 11.4 Mobil telefon
+        email:
+          type: string
+          format: email
+          description: 11.5 Email
+        official_language:
+          type: string
+          enum: &id004
+          - russian
+          - english
+          - both
+          description: 12.1 Rasmiy til
+        native_languages:
+          type: string
+          maxLength: 255
+          example: Luganda
+          description: '12.2 Ona tillari (rahbar uchun: tarjima qila oladigan tillar)'
+        diet:
+          type: string
+          enum: &id005
+          - standard
+          - vegetarian
+          - avoid_pork
+          default: standard
+          description: 13.1 Ovqatlanish
+        food_notes:
+          type: string
+          nullable: true
+          maxLength: 1000
+          description: 13.2 Ovqat bo'yicha izoh
+        medical_notes:
+          type: string
+          nullable: true
+          maxLength: 1000
+          description: 13.3 Tibbiy izoh
+        tshirt_size:
+          type: string
+          nullable: true
+          enum: &id006
+          - XXS
+          - XS
+          - S
+          - M
+          - L
+          - XL
+          - XXL
+          - XXXL
+          - null
+          description: 13.4 Futbolka o'lchami
+        emergency_contact:
+          type: object
+          properties:
+            family_name:
+              type: string
+            first_name:
+              type: string
+            relation:
+              type: string
+            age:
+              type: integer
+              nullable: true
+            languages:
+              type: string
+              nullable: true
+            phones:
+              type: string
+            email:
+              type: string
+              nullable: true
+            telegram:
+              type: string
+              nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ParticipantInput:
+      type: object
+      required:
+      - status
+      - family_name_en
+      - first_name_en
+      - family_name_native
+      - first_name_native
+      - birth_date
+      - birth_place
+      - sex
+      - citizenship
+      - position
+      - org_name
+      - org_location
+      - home_location
+      - home_address
+      - mobile_phone
+      - email
+      - official_language
+      - native_languages
+      - emergency_family_name
+      - emergency_first_name
+      - emergency_relation
+      - emergency_phones
+      properties: &id010
+        status: &id011
+          type: string
+          enum: *id001
+          description: Maqomi
+        student_group: &id012
+          type: string
+          enum: *id002
+          nullable: true
+          description: Guruh. `status=student` bo'lsa majburiy
+        previous_prizewinner: &id013
+          type: boolean
+          default: false
+          description: Oldingi IAO I–II diplom sovrindori
+        needs_visa_invitation: &id014
+          type: boolean
+          default: false
+          description: Viza taklifnomasi kerakmi
+        family_name_en: &id015
+          type: string
+          description: 1.1 Familiya (inglizcha). Faqat 26 ta lotin harfi; faqat BOSH HARFLARDA yozish rad etiladi
+          maxLength: 100
+          example: Okello
+        first_name_en: &id016
+          type: string
+          description: 1.2 Ism (inglizcha). Faqat 26 ta lotin harfi; faqat BOSH HARFLARDA yozish rad etiladi
+          maxLength: 100
+          example: Peter James
+        family_name_native: &id017
+          type: string
+          maxLength: 100
+          example: Окелло
+          description: 2.1 Familiya (ona tilida, istalgan yozuv)
+        first_name_native: &id018
+          type: string
+          maxLength: 100
+          example: Питер Джеймс
+          description: 2.2 Ism (ona tilida)
+        birth_date: &id019
+          type: string
+          pattern: ^\d{2}\.\d{2}\.\d{4}$
+          example: 12.05.2009
+          description: 3 Tug'ilgan sana, KK.OO.YYYY (bugundan oldin)
+        birth_place: &id020
+          type: string
+          maxLength: 255
+          example: Kampala, Uganda
+          description: 4 Tug'ilgan joy
+        sex: &id021
+          type: string
+          enum: *id003
+          description: 5 Jinsi
+        citizenship: &id022
+          type: string
+          example: Ugandan
+          description: 6.1 Hozirgi fuqarolik
+        other_citizenships: &id023
+          type: string
+          nullable: true
+          description: 6.2 Avvalgi/qo'shimcha fuqaroliklar
+        ethnicity: &id024
+          type: string
+          nullable: true
+          description: 6.3 Millati
+        previous_visits_uz: &id025
+          type: string
+          nullable: true
+          maxLength: 1000
+          description: 6.4 O'zbekistonga avvalgi tashriflar
+        passport_number: &id026
+          type: string
+          nullable: true
+          maxLength: 50
+          example: B1234567
+          description: 8.1 Pasport raqami (butun tizimda noyob). Faqat `needs_visa_invitation=true` bo'lsa majburiy.
+        passport_issue_date: &id027
+          type: string
+          pattern: ^\d{2}\.\d{2}\.\d{4}$
+          example: 12.05.2009
+          nullable: true
+          description: 8.2 Berilgan sana (bugun yoki oldin). Faqat `needs_visa_invitation=true` bo'lsa majburiy.
+        passport_expiry_date: &id028
+          type: string
+          pattern: ^\d{2}\.\d{2}\.\d{4}$
+          example: 12.05.2009
+          nullable: true
+          description: 8.3 Amal qilish muddati (kelajakda). Faqat `needs_visa_invitation=true` bo'lsa majburiy.
+        passport_issued_by: &id029
+          type: string
+          nullable: true
+          maxLength: 255
+          description: 8.4 Pasportni bergan organ. Faqat `needs_visa_invitation=true` bo'lsa majburiy.
+        position: &id030
+          type: string
+          maxLength: 255
+          example: Student
+          description: 9 Lavozimi (talaba, o'qituvchi...)
+        org_name: &id031
+          type: string
+          maxLength: 255
+          description: 10.1 Ish/o'qish tashkilotining nomi
+        org_location: &id032
+          type: string
+          maxLength: 255
+          description: 10.2 Tashkilot joylashgan joy
+        org_address: &id033
+          type: string
+          nullable: true
+          maxLength: 500
+          description: 10.3 Tashkilot manzili (indeks bilan). Faqat `needs_visa_invitation=true` bo'lsa majburiy.
+        org_contacts: &id034
+          type: string
+          nullable: true
+          maxLength: 500
+          description: 10.4 Faks, telefon, email. Faqat `needs_visa_invitation=true` bo'lsa majburiy.
+        graduation_date: &id035
+          type: string
+          nullable: true
+          maxLength: 50
+          example: June 2027
+          description: 10.5 Tamomlash oy/yili
+        previous_olympiads: &id036
+          type: string
+          nullable: true
+          maxLength: 1000
+          example: 'IAO-2025: Diploma of participating'
+          description: 10.6 Avval qatnashgan IAO/APAO
+        home_location: &id037
+          type: string
+          maxLength: 255
+          description: 11.1 Yashash joyi
+        home_address: &id038
+          type: string
+          maxLength: 500
+          description: 11.2 Doimiy manzil
+        home_phone: &id039
+          type: string
+          nullable: true
+          maxLength: 100
+          description: 11.3 Uy telefoni
+        mobile_phone: &id040
+          type: string
+          maxLength: 100
+          example: '+256700000000'
+          description: 11.4 Mobil telefon
+        email: &id041
+          type: string
+          format: email
+          description: 11.5 Email
+        official_language: &id042
+          type: string
+          enum: *id004
+          description: 12.1 Rasmiy til
+        native_languages: &id043
+          type: string
+          maxLength: 255
+          example: Luganda
+          description: '12.2 Ona tillari (rahbar uchun: tarjima qila oladigan tillar)'
+        diet: &id044
+          type: string
+          enum: *id005
+          default: standard
+          description: 13.1 Ovqatlanish
+        food_notes: &id045
+          type: string
+          nullable: true
+          maxLength: 1000
+          description: 13.2 Ovqat bo'yicha izoh
+        medical_notes: &id046
+          type: string
+          nullable: true
+          maxLength: 1000
+          description: 13.3 Tibbiy izoh
+        tshirt_size: &id047
+          type: string
+          nullable: true
+          enum: *id006
+          description: 13.4 Futbolka o'lchami
+        emergency_family_name: &id048
+          type: string
+          description: '14.1 Favqulodda aloqa: familiya. Faqat 26 ta lotin harfi; faqat BOSH HARFLARDA yozish rad etiladi'
+          maxLength: 100
+        emergency_first_name: &id049
+          type: string
+          description: '14.2 Favqulodda aloqa: ism. Faqat 26 ta lotin harfi; faqat BOSH HARFLARDA yozish rad etiladi'
+          maxLength: 100
+        emergency_relation: &id050
+          type: string
+          maxLength: 100
+          example: mother
+          description: 14.3 Qarindoshligi
+        emergency_age: &id051
+          type: integer
+          minimum: 1
+          maximum: 120
+          nullable: true
+          description: 14.4 Yoshi (taxminan)
+        emergency_languages: &id052
+          type: string
+          nullable: true
+          maxLength: 255
+          description: 14.5 Muloqot tillari
+        emergency_phones: &id053
+          type: string
+          maxLength: 255
+          description: 14.6 Telefon(lar)
+        emergency_email: &id054
+          type: string
+          format: email
+          nullable: true
+          description: 14.7 Email
+        emergency_telegram: &id055
+          type: string
+          nullable: true
+          maxLength: 100
+          example: '@mary_okello'
+          description: 14.8 Telegram
+        passport_scan: &id056
+          type: string
+          format: binary
+          description: 8.6 Pasport skani, faqat *.jpg, ≤5 MB. Faqat `needs_visa_invitation=true` bo'lsa majburiy. Saqlanganda `Pas-Familiya.jpg`
+            deb nomlanadi
+        face_photo: &id057
+          type: string
+          format: binary
+          description: 8.7 Yuz surati, faqat *.jpg, ≤5 MB, kamida 900×1200 px. Faqat `needs_visa_invitation=true` bo'lsa majburiy. Saqlanganda
+            `Face-Familiya.jpg`
+    ValidationError:
+      type: object
+      properties:
+        message:
+          type: string
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+      example:
+        message: The family name en field format is invalid.
+        errors:
+          family_name_en:
+          - Faqat ingliz alifbosining 26 ta harfidan foydalaning (The family name en must use Latin letters only).
+    Message: &id007
+      type: object
+      properties:
+        message:
+          type: string
+  responses:
+    Unauthorized:
+      description: Token yo'q yoki yaroqsiz
+      content:
+        application/json:
+          schema: *id007
+          example:
+            message: Unauthenticated.
+    Forbidden:
+      description: Ruxsat yo'q
+      content:
+        application/json:
+          schema: *id007
+    NotFound:
+      description: Topilmadi (yoki boshqa jamoaga tegishli)
+      content:
+        application/json:
+          schema: *id007
+    Unverified:
+      description: Email tasdiqlanmagan
+      content:
+        application/json:
+          schema: *id007
+          example:
+            message: Your email address is not verified.
+    Validation:
+      description: Validatsiya xatosi
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationError'
+    Locked:
+      description: Jamoa yakuniy yuborilgan yoki ro'yxatdan o'tish muddati tugagan
+      content:
+        application/json:
+          schema: *id007
+          example:
+            message: Ro'yxat yakuniy yuborilgan, o'zgartirib bo'lmaydi. Kerak bo'lsa tashkilotchilarga murojaat qiling.
+    TooMany:
+      description: Juda ko'p so'rov (throttle)
+paths:
+  /auth/register:
+    post:
+      tags:
+      - Auth
+      summary: Jamoani ro'yxatdan o'tkazish
+      description: User va jamoa yaratadi, emailga tasdiqlash havolasi yuboradi. 10 so'rov/daqiqa.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - name
+              - email
+              - password
+              - password_confirmation
+              - country
+              properties:
+                name:
+                  type: string
+                  description: Mas'ul shaxs ismi
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+                password_confirmation:
+                  type: string
+                country:
+                  type: string
+                  description: Davlat/jamoa nomi (noyob)
+                  example: Uganda
+            example:
+              name: John Okello
+              email: john@example.ug
+              password: secret123
+              password_confirmation: secret123
+              country: Uganda
+      responses:
+        '201':
+          description: Yaratildi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  token:
+                    type: string
+                  message:
+                    type: string
+        '422':
+          $ref: '#/components/responses/Validation'
+        '429':
+          $ref: '#/components/responses/TooMany'
+  /auth/login:
+    post:
+      tags:
+      - Auth
+      summary: Kirish
+      description: 10 so'rov/daqiqa.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - email
+              - password
+              properties:
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+      responses:
+        '200':
+          description: Muvaffaqiyatli
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  user:
+                    $ref: '#/components/schemas/User'
+                  token:
+                    type: string
+        '422':
+          $ref: '#/components/responses/Validation'
+        '429':
+          $ref: '#/components/responses/TooMany'
+  /auth/logout:
+    post:
+      tags:
+      - Auth
+      summary: Chiqish (joriy tokenni bekor qiladi)
+      security: &id008
+      - bearerAuth: []
+      responses:
+        '200':
+          description: Chiqildi
+          content:
+            application/json:
+              schema: *id007
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/me:
+    get:
+      tags:
+      - Auth
+      summary: Joriy foydalanuvchi va jamoa
+      security: *id008
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/User'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /auth/forgot-password:
+    post:
+      tags:
+      - Auth
+      summary: Parolni tiklash havolasini yuborish
+      description: 'Email ro''yxatda bormi-yo''qmi, javob bir xil. Havola: `{frontend}/reset-password?token=...&email=...`. 5 so''rov/daqiqa.'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - email
+              properties:
+                email:
+                  type: string
+                  format: email
+      responses:
+        '200':
+          description: Yuborildi (agar email mavjud bo'lsa)
+          content:
+            application/json:
+              schema: *id007
+        '422':
+          $ref: '#/components/responses/Validation'
+        '429':
+          $ref: '#/components/responses/TooMany'
+  /auth/reset-password:
+    post:
+      tags:
+      - Auth
+      summary: Yangi parol o'rnatish
+      description: Barcha eski tokenlar bekor qilinadi. 5 so'rov/daqiqa.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - token
+              - email
+              - password
+              - password_confirmation
+              properties:
+                token:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+                password_confirmation:
+                  type: string
+      responses:
+        '200':
+          description: Parol yangilandi
+          content:
+            application/json:
+              schema: *id007
+        '422':
+          description: Havola yaroqsiz/muddati tugagan yoki validatsiya xatosi
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationError'
+        '429':
+          $ref: '#/components/responses/TooMany'
+  /auth/email/verify/{id}/{hash}:
+    get:
+      tags:
+      - Auth
+      summary: Emailni tasdiqlash (xatdagi imzolangan havola)
+      description: Token talab qilinmaydi — havolani foydalanuvchi emaildan bosadi. Muvaffaqiyatda `{frontend}/email-verified` ga yo'naltiradi;
+        `json=1` bo'lsa JSON qaytaradi. Imzo yoki hash noto'g'ri bo'lsa 403.
+      parameters:
+      - &id009
+        name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: hash
+        in: path
+        required: true
+        schema:
+          type: string
+      - name: json
+        in: query
+        schema:
+          type: integer
+          enum:
+          - 1
+        description: Yo'naltirish o'rniga JSON
+      - name: expires
+        in: query
+        schema:
+          type: integer
+      - name: signature
+        in: query
+        schema:
+          type: string
+      responses:
+        '200':
+          description: Tasdiqlandi (json=1)
+          content:
+            application/json:
+              schema: *id007
+        '302':
+          description: Frontendga yo'naltirish
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /auth/email/resend:
+    post:
+      tags:
+      - Auth
+      summary: Tasdiqlash xatini qayta yuborish
+      description: 3 so'rov/daqiqa.
+      security: *id008
+      responses:
+        '200':
+          description: Yuborildi
+          content:
+            application/json:
+              schema: *id007
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooMany'
+  /meta/options:
+    get:
+      tags:
+      - Meta
+      summary: Forma uchun tanlov variantlari (ochiq)
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  statuses:
+                    type: array
+                    items:
+                      type: string
+                  student_groups:
+                    type: array
+                    items:
+                      type: string
+                  diets:
+                    type: array
+                    items:
+                      type: string
+                  official_languages:
+                    type: array
+                    items:
+                      type: string
+                  tshirt_sizes:
+                    type: array
+                    items:
+                      type: string
+                  sex:
+                    type: array
+                    items:
+                      type: string
+                  registration_deadline:
+                    type: string
+                    nullable: true
+                    example: '2026-11-15'
+  /team:
+    get:
+      tags:
+      - Team
+      summary: Mening jamoam
+      security: *id008
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  team:
+                    $ref: '#/components/schemas/Team'
+                  locked:
+                    type: boolean
+                    description: Yuborilgan yoki muddat tugagan
+                  deadline:
+                    type: string
+                    nullable: true
+                  counts:
+                    type: object
+                    properties:
+                      team_leaders:
+                        type: integer
+                      observers:
+                        type: integer
+                      students:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    patch:
+      tags:
+      - Team
+      summary: Davlat nomini o'zgartirish
+      description: Email tasdiqlangan va jamoa qulflanmagan bo'lishi kerak.
+      security: *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - country
+              properties:
+                country:
+                  type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Team'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Unverified'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '423':
+          $ref: '#/components/responses/Locked'
+  /team/submit:
+    post:
+      tags:
+      - Team
+      summary: Ro'yxatni yakuniy yuborish
+      description: 'Tekshiradi: kamida bitta jamoa rahbari bor; viza so''ragan har bir ishtirokchida pasport ma''lumotlari, ikkala fayl, tashkilot
+        manzili va aloqasi to''liq. Muvaffaqiyatda jamoa qulflanadi va jamoaga hamda tashkilotchilarga email ketadi.'
+      security: *id008
+      responses:
+        '200':
+          description: Yuborildi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  team:
+                    $ref: '#/components/schemas/Team'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Unverified'
+        '422':
+          description: Ma'lumotlar to'liq emas
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  errors:
+                    type: array
+                    items:
+                      type: string
+              example:
+                message: Yuborish uchun ma'lumotlar to'liq emas.
+                errors:
+                - Kamida bitta jamoa rahbari kiritilishi kerak.
+        '423':
+          $ref: '#/components/responses/Locked'
+  /participants:
+    get:
+      tags:
+      - Participants
+      summary: Jamoa ishtirokchilari
+      security: *id008
+      parameters:
+      - name: status
+        in: query
+        schema:
+          type: string
+          enum:
+          - team_leader
+          - team_leader_jury
+          - observer
+          - student
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Participant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags:
+      - Participants
+      summary: Ishtirokchi qo'shish
+      description: Email tasdiqlangan va jamoa qulflanmagan bo'lishi kerak.
+      security: *id008
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ParticipantInput'
+          application/json:
+            schema:
+              allOf:
+              - $ref: '#/components/schemas/ParticipantInput'
+              description: Fayllarsiz JSON ham mumkin
+      responses:
+        '201':
+          description: Yaratildi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Participant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Unverified'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '423':
+          $ref: '#/components/responses/Locked'
+  /participants/{id}:
+    get:
+      tags:
+      - Participants
+      summary: Bitta ishtirokchi
+      security: *id008
+      parameters:
+      - *id009
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Participant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags:
+      - Participants
+      summary: Qisman yangilash
+      description: '`PUT` ham xuddi shunday ishlaydi. Faqat yuborilgan maydonlar tekshiriladi.'
+      security: *id008
+      parameters:
+      - *id009
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Faqat o'zgaradigan maydonlar
+              properties: *id010
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                status: *id011
+                student_group: *id012
+                previous_prizewinner: *id013
+                needs_visa_invitation: *id014
+                family_name_en: *id015
+                first_name_en: *id016
+                family_name_native: *id017
+                first_name_native: *id018
+                birth_date: *id019
+                birth_place: *id020
+                sex: *id021
+                citizenship: *id022
+                other_citizenships: *id023
+                ethnicity: *id024
+                previous_visits_uz: *id025
+                passport_number: *id026
+                passport_issue_date: *id027
+                passport_expiry_date: *id028
+                passport_issued_by: *id029
+                position: *id030
+                org_name: *id031
+                org_location: *id032
+                org_address: *id033
+                org_contacts: *id034
+                graduation_date: *id035
+                previous_olympiads: *id036
+                home_location: *id037
+                home_address: *id038
+                home_phone: *id039
+                mobile_phone: *id040
+                email: *id041
+                official_language: *id042
+                native_languages: *id043
+                diet: *id044
+                food_notes: *id045
+                medical_notes: *id046
+                tshirt_size: *id047
+                emergency_family_name: *id048
+                emergency_first_name: *id049
+                emergency_relation: *id050
+                emergency_age: *id051
+                emergency_languages: *id052
+                emergency_phones: *id053
+                emergency_email: *id054
+                emergency_telegram: *id055
+                passport_scan: *id056
+                face_photo: *id057
+                _method:
+                  type: string
+                  enum:
+                  - PATCH
+                  description: 'Fayl bilan yangilashda: `POST` + `_method=PATCH`'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Participant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Unverified'
+        '422':
+          $ref: '#/components/responses/Validation'
+        '423':
+          $ref: '#/components/responses/Locked'
+    delete:
+      tags:
+      - Participants
+      summary: O'chirish (yuklangan fayllari bilan)
+      security: *id008
+      parameters:
+      - *id009
+      responses:
+        '204':
+          description: O'chirildi
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Unverified'
+        '423':
+          $ref: '#/components/responses/Locked'
+  /participants/{id}/files/{type}:
+    get:
+      tags:
+      - Participants
+      summary: Yuklangan faylni olish
+      security: *id008
+      parameters:
+      - *id009
+      - &id058
+        name: type
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - passport
+          - face
+        description: '`passport` — pasport skani, `face` — yuz surati'
+      responses:
+        '200': &id059
+          description: Fayl (jpg)
+          content:
+            image/jpeg:
+              schema:
+                type: string
+                format: binary
+        '404': &id060
+          $ref: '#/components/responses/NotFound'
+        '401': &id061
+          $ref: '#/components/responses/Unauthorized'
+  /admin/teams:
+    get:
+      tags:
+      - Admin
+      summary: Barcha jamoalar
+      description: '`is_admin=true` kerak.'
+      security: *id008
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  allOf:
+                  - $ref: '#/components/schemas/Team'
+                  - type: object
+                    properties:
+                      user:
+                        type: object
+                        properties:
+                          id:
+                            type: integer
+                          name:
+                            type: string
+                          email:
+                            type: string
+                      participants_count:
+                        type: integer
+                      leaders_count:
+                        type: integer
+                      observers_count:
+                        type: integer
+                      students_count:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/teams/{id}:
+    get:
+      tags:
+      - Admin
+      summary: Jamoa va ishtirokchilari
+      security: *id008
+      parameters:
+      - *id009
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  team:
+                    $ref: '#/components/schemas/Team'
+                  participants:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Participant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/teams/{id}/reopen:
+    post:
+      tags:
+      - Admin
+      summary: Yuborilgan jamoani qayta ochish
+      description: Jamoa mas'ulga email ketadi.
+      security: *id008
+      parameters:
+      - *id009
+      responses:
+        '200':
+          description: Qayta ochildi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  team:
+                    $ref: '#/components/schemas/Team'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /admin/participants/{id}/files/{type}:
+    get:
+      tags:
+      - Admin
+      summary: Istalgan ishtirokchi faylini olish
+      security: *id008
+      parameters:
+      - *id009
+      - *id058
+      responses:
+        '200': *id059
+        '404': *id060
+        '401': *id061
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /admin/export/participants.csv:
+    get:
+      tags:
+      - Admin
+      summary: Barcha ishtirokchilar — CSV
+      description: 'UTF-8 (BOM bilan), Excel to''g''ri ochadi. Birinchi ustunlar: `country`, `team_submitted`.'
+      security: *id008
+      responses:
+        '200':
+          description: CSV fayl
+          content:
+            text/csv:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
