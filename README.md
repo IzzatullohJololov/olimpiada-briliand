@@ -118,14 +118,36 @@ bildirishnomalarga `ShouldQueue` qo'shib, `php artisan queue:work` ishga tushiri
 | PATCH | /admin/participants/{id}/payment | ishtirokchi **to'lov qildi / qilmadi**: `{ "is_paid": true, "payment_note": "Kvitansiya №17" }` |
 | POST | /admin/teams/{id}/payments | jamoa ishtirokchilarini bir yo'la belgilash: `{ "is_paid": true, "participants": [1, 2] }` (`participants` bo'lmasa — hammasi) |
 
-**To'lov ustuni.** Har bir ishtirokchida `is_paid` (true/false), `paid_at` (to'langan deb belgilangan vaqt) va `payment_note` (izoh) bor.
-Ularni faqat administrator o'zgartiradi; jamoa mas'uli `POST/PATCH /participants` da yuborsa e'tiborga olinmaydi, lekin
-`GET /participants` javobida holatni ko'radi (saytda ishtirokchi qatorida «To'langan / To'lanmagan» belgisi).
+| GET | /admin/permissions | ruxsatlar lug'ati |
+| GET / POST | /admin/users | admin paneli foydalanuvchilari ro'yxati / yangi foydalanuvchi (`{ name, email, password?, permissions }`) |
+| PATCH / DELETE | /admin/users/{id} | ism va ruxsatlarni o'zgartirish / o'chirish |
+| POST | /admin/users/{id}/reset-password | yangi parol (bir marta qaytadi, emailga yuboriladi) |
 
-Administrator tayinlash (avval o'sha odam /auth/register qilgan bo'lishi kerak):
+**To'lov ustuni.** Har bir ishtirokchida `is_paid` (true/false), `paid_at` (to'langan deb belgilangan vaqt), `payment_amount` (summa),
+`payment_currency` (USD/EUR/UZS/RUB) va `payment_note` (izoh) bor. Ularni faqat `payments` ruxsatli administrator o'zgartiradi;
+jamoa mas'uli `POST/PATCH /participants` da yuborsa e'tiborga olinmaydi, lekin `GET /participants` javobida holatni ko'radi
+(saytda ishtirokchi qatorida «To'langan · 150 USD / To'lanmagan» belgisi).
+
+### Admin paneli foydalanuvchilari va ruxsatlar
+
+Admin panelida (maxfiy manzil → **Foydalanuvchilar**) `users` ruxsatli administrator boshqa foydalanuvchilarni qo'shadi.
+Har bir foydalanuvchi jamoalar va ishtirokchilarni **ko'radi** (fayllar, CSV/Excel bilan); qolgani ruxsat bilan:
+
+| Ruxsat | Nima mumkin |
+|---|---|
+| `teams.manage` | tasdiqlash, rad etish, parol, qayta ochish, arxiv, o'chirish, IAO kodi |
+| `payments` | ishtirokchilar to'lovini belgilash (summa, valyuta, izoh) |
+| `settings` | olimpiada sozlamalari, yangi mavsum (hammasini arxivlash) |
+| `users` | panel foydalanuvchilarini boshqarish |
+| `*` | to'liq huquq (bosh administrator) |
+
+API da ruxsat yetishmasa **403** qaytadi; `GET /auth/me` javobidagi `permissions` ro'yxatiga qarab sayt tugmalarni yashiradi.
+Mavjud administratorlar migratsiyada avtomatik `*` oladi.
+
+Birinchi bosh administrator terminaldan (foydalanuvchi bo'lmasa yaratiladi va parol ko'rsatiladi):
 
 ```bash
-php artisan iao:make-admin admin@example.com
+php artisan iao:make-admin admin@example.com --name="Ism Familiya"
 ```
 
 ## Muddat va yakuniy yuborish

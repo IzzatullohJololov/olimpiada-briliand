@@ -50,7 +50,7 @@ export async function dashboardView(ctx) {
       p.previous_prizewinner ? `<span class="tag">${esc(t('badge.prize'))}</span>` : '',
       visaIncomplete(p) ? `<span class="tag warn">${I.alert}${esc(t('badge.files'))}</span>` : '',
       // payment is recorded by the organisers; the team only sees it
-      `<span class="tag ${p.is_paid ? 'ok' : 'muted'}" title="${esc(p.is_paid && p.paid_at ? t('pay.paidAt', { date: fmtDateTime(p.paid_at) }) : t('pay.teamNote'))}">${p.is_paid ? I.check : ''}${esc(t(p.is_paid ? 'badge.paid' : 'badge.unpaid'))}</span>`,
+      `<span class="tag ${p.is_paid ? 'ok' : 'muted'}" title="${esc(p.is_paid && p.paid_at ? t('pay.paidAt', { date: fmtDateTime(p.paid_at) }) : t('pay.teamNote'))}">${p.is_paid ? I.check : ''}${esc(t(p.is_paid ? 'badge.paid' : 'badge.unpaid'))}${p.is_paid && p.payment_amount !== null && p.payment_amount !== undefined ? ` · ${esc(`${p.payment_amount} ${p.payment_currency || ''}`.trim())}` : ''}</span>`,
     ].join('');
     return `<li class="prow">
       <span class="avatar" aria-hidden="true">${esc(initials(p))}</span>
@@ -379,7 +379,7 @@ export async function reviewView(ctx) {
       <div class="table-wrap"><table>
         <thead><tr><th>#</th><th>${esc(t('col.name'))}</th><th>${esc(t('col.role'))}</th><th>${esc(t('col.birth'))}</th><th>${esc(t('col.citizenship'))}</th><th>${esc(t('col.visa'))}</th><th>${esc(t('col.payment'))}</th></tr></thead>
         <tbody>${sorted.map((p, i) => `<tr><td class="muted">${i + 1}</td><td><a href="/participants/${p.id}" data-link>${esc(personName(p))}</a></td><td>${esc(roleLabel(p))}</td><td>${esc(p.birth_date || '')}</td><td>${esc(p.citizenship || '')}</td><td>${esc(t(p.needs_visa_invitation ? 'common.yes' : 'common.no'))}</td>
-          <td><span class="tag ${p.is_paid ? 'ok' : 'muted'}">${esc(t(p.is_paid ? 'badge.paid' : 'badge.unpaid'))}</span></td></tr>`).join('')}</tbody>
+          <td><span class="tag ${p.is_paid ? 'ok' : 'muted'}">${esc(t(p.is_paid ? 'badge.paid' : 'badge.unpaid'))}</span>${p.is_paid && p.payment_amount !== null && p.payment_amount !== undefined ? ` <span class="muted small">${esc(`${p.payment_amount} ${p.payment_currency || ''}`.trim())}</span>` : ''}</td></tr>`).join('')}</tbody>
       </table></div>
     </section>
     <section class="card">

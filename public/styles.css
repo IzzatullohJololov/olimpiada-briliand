@@ -213,6 +213,13 @@ a { color: var(--cyan); }
 .pay-btn:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
 .pay-note { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pay-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.pay-amount { display: block; font-weight: 600; font-size: 13px; font-variant-numeric: tabular-nums; margin-top: 2px; }
+.pay-amount-row { display: grid; grid-template-columns: 1fr 120px; gap: 0 12px; }
+.pay-amount-row .span-all { grid-column: 1 / -1; }
+.perm-list .checkbox { margin: 8px 0; }
+.perm-list .perm-item { margin-left: 24px; }
+.perm-list input:disabled + span { opacity: .5; }
+.tags { display: flex; gap: 4px; flex-wrap: wrap; }
 .dlg-field { margin-top: 12px; }
 .dlg-field .dlg-label { display: block; margin-bottom: 4px; }
 .badge { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap; }

@@ -1,10 +1,12 @@
 <?php
 
 use App\Http\Controllers\Api\AdminController;
+use App\Http\Controllers\Api\AdminUserController;
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\ParticipantController;
 use App\Http\Controllers\Api\TeamController;
 use App\Http\Middleware\EnsureAdmin;
+use App\Http\Middleware\EnsurePermission;
 use App\Http\Middleware\EnsureTeamEditable;
 use App\Models\Participant;
 use App\Support\Olympiad;
@@ -58,26 +60,47 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::delete('participants/{participant}', [ParticipantController::class, 'destroy'])->whereNumber('participant');
     });
 
-    // Administrator
+    // Administrator. Har bir administrator ko'ra oladi; o'zgartirish amallari ruxsat bo'yicha (User::PERMISSIONS).
     Route::prefix('admin')->middleware(EnsureAdmin::class)->group(function () {
+        // Ko'rish — barcha administratorlar
         Route::get('teams', [AdminController::class, 'teams']);
         Route::get('teams/{team}', [AdminController::class, 'showTeam']);
-        Route::patch('teams/{team}', [AdminController::class, 'updateTeam']);
-        Route::delete('teams/{team}', [AdminController::class, 'destroyTeam']);
-        Route::post('teams/archive-all', [AdminController::class, 'archiveAll']);
-        Route::post('teams/{team}/approve', [AdminController::class, 'approve']);
-        Route::post('teams/{team}/reject', [AdminController::class, 'reject']);
-        Route::post('teams/{team}/reset-password', [AdminController::class, 'resetPassword']);
-        Route::post('teams/{team}/reopen', [AdminController::class, 'reopen']);
-        Route::post('teams/{team}/archive', [AdminController::class, 'archive']);
-        Route::post('teams/{team}/unarchive', [AdminController::class, 'unarchive']);
         Route::get('settings', [AdminController::class, 'settings']);
-        Route::put('settings', [AdminController::class, 'updateSettings']);
         Route::get('participants/{participant}/files/{type}', [AdminController::class, 'file'])->where('type', 'passport|face');
         Route::get('export/participants.csv', [AdminController::class, 'exportCsv']);
+        Route::get('permissions', [AdminUserController::class, 'permissions']);
 
-        // To'lov: ishtirokchi to'lov qildi / qilmadi (bitta yoki jamoa bo'yicha bir yo'la)
-        Route::patch('participants/{participant}/payment', [AdminController::class, 'updatePayment'])->whereNumber('participant');
-        Route::post('teams/{team}/payments', [AdminController::class, 'updateTeamPayments']);
+        // Jamoalarni boshqarish
+        Route::middleware(EnsurePermission::for('teams.manage'))->group(function () {
+            Route::patch('teams/{team}', [AdminController::class, 'updateTeam']);
+            Route::delete('teams/{team}', [AdminController::class, 'destroyTeam']);
+            Route::post('teams/{team}/approve', [AdminController::class, 'approve']);
+            Route::post('teams/{team}/reject', [AdminController::class, 'reject']);
+            Route::post('teams/{team}/reset-password', [AdminController::class, 'resetPassword']);
+            Route::post('teams/{team}/reopen', [AdminController::class, 'reopen']);
+            Route::post('teams/{team}/archive', [AdminController::class, 'archive']);
+            Route::post('teams/{team}/unarchive', [AdminController::class, 'unarchive']);
+        });
+
+        // To'lov: ishtirokchi to'lov qildi / qilmadi, summa (bitta yoki jamoa bo'yicha bir yo'la)
+        Route::middleware(EnsurePermission::for('payments'))->group(function () {
+            Route::patch('participants/{participant}/payment', [AdminController::class, 'updatePayment'])->whereNumber('participant');
+            Route::post('teams/{team}/payments', [AdminController::class, 'updateTeamPayments']);
+        });
+
+        // Sozlamalar va yangi mavsum
+        Route::middleware(EnsurePermission::for('settings'))->group(function () {
+            Route::put('settings', [AdminController::class, 'updateSettings']);
+            Route::post('teams/archive-all', [AdminController::class, 'archiveAll']);
+        });
+
+        // Admin paneli foydalanuvchilari
+        Route::middleware(EnsurePermission::for('users'))->group(function () {
+            Route::get('users', [AdminUserController::class, 'index']);
+            Route::post('users', [AdminUserController::class, 'store']);
+            Route::patch('users/{user}', [AdminUserController::class, 'update'])->whereNumber('user');
+            Route::post('users/{user}/reset-password', [AdminUserController::class, 'resetPassword'])->whereNumber('user');
+            Route::delete('users/{user}', [AdminUserController::class, 'destroy'])->whereNumber('user');
+        });
     });
 });

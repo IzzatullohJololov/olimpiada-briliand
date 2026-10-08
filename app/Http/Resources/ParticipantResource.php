@@ -22,6 +22,8 @@ class ParticipantResource extends JsonResource
             'is_paid' => (bool) $this->is_paid,
             'paid_at' => $this->paid_at?->toIso8601String(),
             'payment_note' => $this->payment_note,
+            'payment_amount' => $this->payment_amount !== null ? (float) $this->payment_amount : null,
+            'payment_currency' => $this->payment_currency,
 
             'family_name_en' => $this->family_name_en,
             'first_name_en' => $this->first_name_en,

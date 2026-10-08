@@ -302,40 +302,76 @@ function paymentTag(p, clickable = false) {
     ? `<button type="button" class="${cls}" data-pay="${p.id}" title="${esc(title)}" aria-label="${esc(t('pay.edit', { name: personName(p) }))}">${label}</button>`
     : `<span class="${cls}" title="${esc(title)}">${label}</span>`;
 }
-const paymentCell = (p) => `${paymentTag(p, true)}${p.payment_note ? `<span class="pay-note" title="${esc(p.payment_note)}">${esc(p.payment_note)}</span>` : ''}`;
+const CURRENCIES = ['USD', 'EUR', 'UZS', 'RUB'];
+const fmtAmount = (n, cur) => `${Number(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 })} ${cur || ''}`.trim();
+const amountOf = (p) => (p.payment_amount !== null && p.payment_amount !== undefined ? `<span class="pay-amount">${esc(fmtAmount(p.payment_amount, p.payment_currency))}</span>` : '');
+const paymentCell = (p, clickable = true) => `${paymentTag(p, clickable)}${amountOf(p)}${p.payment_note ? `<span class="pay-note" title="${esc(p.payment_note)}">${esc(p.payment_note)}</span>` : ''}`;
 const paidOf = (ps) => ps.filter((p) => p.is_paid).length;
-const paymentChip = (ps) => `<span class="qchip ${ps.length && paidOf(ps) === ps.length ? '' : 'over'}" id="pay-chip" title="${esc(t('pay.title'))}">${esc(t('pay.summary', { paid: paidOf(ps), total: ps.length }))}</span>`;
+/** "Paid 3 of 5 · 450 USD": totals of the paid participants, one figure per currency */
+function paymentChip(ps) {
+  const sums = {};
+  ps.filter((p) => p.is_paid && p.payment_amount !== null && p.payment_amount !== undefined).forEach((p) => { const c = p.payment_currency || ''; sums[c] = (sums[c] || 0) + Number(p.payment_amount); });
+  const total = Object.entries(sums).map(([c, n]) => fmtAmount(n, c)).join(' + ');
+  return `<span class="qchip ${ps.length && paidOf(ps) === ps.length ? '' : 'over'}" id="pay-chip" title="${esc(t('pay.title'))}">${esc(t('pay.summary', { paid: paidOf(ps), total: ps.length }))}${total ? ` · ${esc(t('pay.total'))} ${esc(total)}` : ''}</span>`;
+}
 
-/** Paid / not paid + a note for one participant. Resolves to { is_paid, payment_note } or null. */
-function paymentDialog(p) {
+/**
+ * Paid / not paid, amount, currency and a note. For one participant (`p`) or for a whole team (`bulk: { n }`).
+ * Resolves to the request body ({ is_paid, payment_note?, payment_amount?, payment_currency? }) or null.
+ * Amount left empty in bulk mode means "keep the amounts as they are" (the field is not sent).
+ */
+function paymentDialog(p, bulk = null) {
   return new Promise((resolve) => {
     const dlg = document.createElement('dialog');
     dlg.className = 'dialog';
     dlg.setAttribute('aria-labelledby', 'pay-title');
-    dlg.innerHTML = `<h2 id="pay-title">${esc(t('pay.edit', { name: personName(p) }))}</h2>
-      <p class="muted small">${esc(roleLabel(p))}${p.is_paid && p.paid_at ? ` · ${esc(t('pay.paidAt', { date: fmtDateTime(p.paid_at) }))}` : ''}</p>
-      <fieldset class="dlg-field"><legend class="dlg-label">${esc(t('pay.status'))}</legend>
+    const cur = (p && p.payment_currency) || CURRENCIES[0];
+    const amount = p && p.payment_amount !== null && p.payment_amount !== undefined ? p.payment_amount : '';
+    dlg.innerHTML = `<h2 id="pay-title">${esc(bulk ? t(bulk.paid ? 'pay.allPaidTitle' : 'pay.allUnpaidTitle', { n: bulk.n }) : t('pay.edit', { name: personName(p) }))}</h2>
+      <p class="muted small">${bulk ? esc(t('pay.allText')) : `${esc(roleLabel(p))}${p.is_paid && p.paid_at ? ` · ${esc(t('pay.paidAt', { date: fmtDateTime(p.paid_at) }))}` : ''}`}</p>
+      ${bulk ? '' : `<fieldset class="dlg-field"><legend class="dlg-label">${esc(t('pay.status'))}</legend>
         <label class="checkbox"><input type="radio" name="pay" value="1" ${p.is_paid ? 'checked' : ''}><span>${esc(t('pay.paid'))}</span></label>
         <label class="checkbox"><input type="radio" name="pay" value="0" ${p.is_paid ? '' : 'checked'}><span>${esc(t('pay.unpaid'))}</span></label>
-      </fieldset>
+      </fieldset>`}
+      ${bulk && !bulk.paid ? '' : `<div class="dlg-field pay-amount-row">
+        <div><label class="dlg-label" for="pay-amount">${esc(t('pay.amount'))}</label>
+          <input id="pay-amount" class="input" inputmode="decimal" autocomplete="off" placeholder="0.00" value="${esc(amount)}"></div>
+        <div><label class="dlg-label" for="pay-currency">${esc(t('pay.currency'))}</label>
+          <select id="pay-currency" class="input">${CURRENCIES.map((c) => `<option value="${c}" ${c === cur ? 'selected' : ''}>${c}</option>`).join('')}</select></div>
+        <p class="hint span-all">${esc(t(bulk ? 'pay.bulkAmountHint' : 'pay.amountHint'))}</p>
+        <p class="err span-all" id="pay-err" role="alert"></p></div>`}
       <div class="dlg-field"><label class="dlg-label" for="pay-note">${esc(t('pay.note'))}</label>
-        <input id="pay-note" class="input" maxlength="255" autocomplete="off" value="${esc(p.payment_note || '')}"></div>
+        <input id="pay-note" class="input" maxlength="255" autocomplete="off" value="${esc((p && p.payment_note) || '')}"${bulk ? ` placeholder="${esc(t('common.optional'))}"` : ''}></div>
       <div class="dialog-actions">
         <button type="button" class="btn btn-ghost" value="cancel">${esc(t('common.cancel'))}</button>
-        <button type="button" class="btn btn-primary" value="ok">${I.check}${esc(t('form.save'))}</button>
+        <button type="button" class="btn ${bulk && !bulk.paid ? 'btn-danger' : 'btn-primary'}" value="ok">${I.check}${esc(bulk ? t(bulk.paid ? 'pay.allPaid' : 'pay.allUnpaid') : t('common.save'))}</button>
       </div>`;
     document.body.appendChild(dlg);
     const done = (v) => { dlg.close(); dlg.remove(); resolve(v); };
-    const save = () => done({ is_paid: dlg.querySelector('input[name=pay]:checked').value === '1', payment_note: dlg.querySelector('#pay-note').value.trim() || null });
+    const save = () => {
+      const body = { is_paid: bulk ? bulk.paid : dlg.querySelector('input[name=pay]:checked').value === '1' };
+      const note = dlg.querySelector('#pay-note').value.trim();
+      if (!bulk || note) body.payment_note = note || null;
+      const amountEl = dlg.querySelector('#pay-amount');
+      if (amountEl) {
+        const raw = amountEl.value.trim().replace(/\s/g, '').replace(',', '.');
+        if (raw && !/^\d+(\.\d{1,2})?$/.test(raw)) {
+          const err = dlg.querySelector('#pay-err'); err.textContent = t('pay.invalidAmount'); err.style.display = 'flex'; amountEl.focus();
+          return;
+        }
+        if (raw || !bulk) { body.payment_amount = raw ? Number(raw) : null; body.payment_currency = dlg.querySelector('#pay-currency').value; }
+      }
+      done(body);
+    };
     dlg.addEventListener('click', (e) => {
       const b = e.target.closest('.dialog-actions button');
       if (b) { if (b.value === 'ok') save(); else done(null); }
       else if (e.target === dlg) done(null);
     });
-    dlg.querySelector('#pay-note').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+    dlg.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT') { e.preventDefault(); save(); } });
     dlg.addEventListener('cancel', (e) => { e.preventDefault(); done(null); });
     dlg.showModal();
-    dlg.querySelector('input[name=pay]:checked').focus();
+    (dlg.querySelector('input[name=pay]:checked') || dlg.querySelector('#pay-amount') || dlg.querySelector('#pay-note')).focus();
   });
 }
 
@@ -394,8 +430,14 @@ export async function adminTeamsView(ctx) {
 
   const btn = (act, x, label, cls = 'btn-ghost', ico = '') => `<button type="button" class="btn ${cls} btn-sm" data-act="${act}" data-id="${x.id}">${ico}${esc(label)}</button>`;
   const openLink = (x) => `<a class="btn btn-ghost btn-sm" href="${base}/teams/${x.id}" data-link>${esc(t('admin.open'))}</a>`;
+  const canManage = ctx.can('teams.manage');
   const actionsFor = (x) => {
     const st = teamState(x);
+    if (!canManage) {
+      // view-only organiser: open the team, download Excel; no decisions
+      const xls = x.participants_count ? `<button type="button" class="btn btn-ghost btn-sm" data-xls="${x.id}">${I.download}Excel</button>` : '';
+      return st === 'pending' ? `${openLink(x)}` : `${openLink(x)}${xls}`;
+    }
     const more = menuHtml(x, menuItems(x));
     if (st === 'pending') return `${btn('approve', x, t('adm.approve'), 'btn-primary', I.check)}${btn('reject', x, t('adm.reject'))}${more}`;
     if (st === 'rejected') return `${btn('approve', x, t('adm.approve'), 'btn-primary', I.check)}${openLink(x)}${more}`;
@@ -409,7 +451,7 @@ export async function adminTeamsView(ctx) {
   const rowHtml = (x) => {
     const pending = teamState(x) === 'pending';
     return `<div class="trow ${pending ? 'hot' : ''} ${String(activeId) === String(x.id) ? 'is-active' : ''}" data-row="${x.id}">
-      <div class="tcheck">${pending ? `<input type="checkbox" data-pick="${x.id}" ${picked.has(x.id) ? 'checked' : ''} aria-label="${esc(t('adm.pick', { country: x.country }))}">` : ''}</div>
+      <div class="tcheck">${pending && canManage ? `<input type="checkbox" data-pick="${x.id}" ${picked.has(x.id) ? 'checked' : ''} aria-label="${esc(t('adm.pick', { country: x.country }))}">` : ''}</div>
       <div class="tmain"><span><a class="strong tname" href="${base}/teams/${x.id}" data-link>${esc(x.country)}</a>${codeChip(x)}</span>
         <span class="muted small">${esc(fmtDateTime(x.created_at))}</span></div>
       <div class="tcontact"><span class="strong">${esc(x.user ? x.user.name : '')}</span>
@@ -424,7 +466,7 @@ export async function adminTeamsView(ctx) {
       ${esc(t(`adm.tab.${tb}`))}<span class="count ${tb === 'pending' && count(tb) ? 'hot' : ''}">${count(tb)}</span></button>`).join('');
   };
   const renderBulk = (list) => {
-    const pend = list.filter((x) => teamState(x) === 'pending');
+    const pend = canManage ? list.filter((x) => teamState(x) === 'pending') : [];
     const ticked = pend.filter((x) => picked.has(x.id));
     const bar = $('#bulk');
     bar.classList.toggle('on', pend.length > 0);
@@ -603,6 +645,7 @@ export async function adminTeamsView(ctx) {
     } else if (e.key === '/') { e.preventDefault(); $('#search').focus(); }
     else if (!cur) return;
     else if (e.key === 'Enter' && !e.target.closest('a, button')) ctx.navigate(`${base}/teams/${cur.id}`);
+    else if (!canManage) return;
     else if (e.key === 'a' && ['pending', 'rejected'].includes(teamState(cur))) perform(cur, 'approve');
     else if (e.key === 'r' && teamState(cur) === 'pending') perform(cur, 'reject');
     else if (e.key === 'x' && teamState(cur) === 'pending') { if (picked.has(cur.id)) picked.delete(cur.id); else picked.add(cur.id); render(); }
@@ -646,15 +689,17 @@ export async function adminTeamView(ctx, { id }) {
   const nav = (dir, to) => `<a class="icon-btn" href="${to ? `${base}/teams/${to}` : '#'}" data-link ${to ? '' : 'aria-disabled="true"'}
     aria-label="${esc(t(dir === 'prev' ? 'adm.prevTeam' : 'adm.nextTeam'))}" title="${esc(t(dir === 'prev' ? 'adm.prevTeam' : 'adm.nextTeam'))}">${dir === 'prev' ? I.back : I.next}</a>`;
 
+  const canManage = ctx.can('teams.manage');
+  const canPay = ctx.can('payments');
   const act = (a, label, kind = 'ghost', ico = '') => `<button type="button" class="btn btn-${kind}" data-act="${a}">${ico}${esc(t(label))}</button>`;
-  const actions = {
+  const actions = canManage ? {
     pending: act('approve', 'adm.approve', 'primary', I.check) + act('reject', 'adm.reject'),
     approved: act('reset-password', 'adm.resetPassword', 'ghost', I.key),
     completed: act('reopen', 'admin.reopen', 'ghost', I.undo) + act('reset-password', 'adm.resetPassword', 'ghost', I.key),
     rejected: act('approve', 'adm.approve', 'primary', I.check),
     archived: act('unarchive', 'adm.unarchive', 'primary'),
-  }[st];
-  const more = `<div class="menu"><button type="button" class="icon-btn icon-neutral" data-menu aria-haspopup="menu" aria-expanded="false" aria-label="${esc(t('adm.more'))}" title="${esc(t('adm.more'))}">${I.more}</button>
+  }[st] : '';
+  const more = !canManage ? '' : `<div class="menu"><button type="button" class="icon-btn icon-neutral" data-menu aria-haspopup="menu" aria-expanded="false" aria-label="${esc(t('adm.more'))}" title="${esc(t('adm.more'))}">${I.more}</button>
     <div class="menu-pop" role="menu" hidden>
       ${st === 'archived' ? '' : `<button type="button" role="menuitem" data-act="archive">${I.archive}${esc(t('adm.archive'))}</button>`}
       <button type="button" role="menuitem" class="danger" data-act="delete">${I.trash}${esc(t('adm.delete'))}</button></div></div>`;
@@ -676,12 +721,12 @@ export async function adminTeamView(ctx, { id }) {
     <div class="detail-grid">
       <section class="card facts-card">
         <dl class="facts">
-          ${fact(t('adm.iaoCode'), `<form id="code-form" class="code-form" novalidate>
+          ${fact(t('adm.iaoCode'), canManage ? `<form id="code-form" class="code-form" novalidate>
             <input id="iao-code" class="input" maxlength="3" autocomplete="off" spellcheck="false" aria-label="${esc(t('adm.iaoCode'))}"
               value="${esc(team.iao_code || '')}" placeholder="${esc(suggestIaoCode(team.country) || '—')}">
-            <button type="submit" class="btn btn-ghost btn-sm">${esc(t('form.save'))}</button></form>
+            <button type="submit" class="btn btn-ghost btn-sm">${esc(t('common.save'))}</button></form>
             <p class="hint" id="code-hint">${esc(suggestIaoCode(team.country) ? t('adm.iaoCodeHint', { code: suggestIaoCode(team.country) }) : t('adm.iaoCodeNone'))}</p>
-            <p class="err" id="code-err" role="alert"></p>`)}
+            <p class="err" id="code-err" role="alert"></p>` : esc(iaoCodeOf(team) || '—'))}
           ${fact(t('admin.colContact'), esc(u.name || ''))}
           ${fact(t('auth.email'), u.email ? `<a href="mailto:${esc(u.email)}">${esc(u.email)}</a>` : '')}
           ${fact(t('adm.phone'), u.phone ? `<a href="tel:${esc(u.phone.replace(/\s/g, ''))}">${esc(u.phone)}</a>` : '')}
@@ -693,9 +738,9 @@ export async function adminTeamView(ctx, { id }) {
       <div class="detail-main">
         ${ps.length ? `<div class="detail-head"><h3>${esc(t('adm.participantsTitle'))} <span class="muted">${ps.length}</span></h3>
           <div class="qchips" title="${esc(t('adm.quotaTitle'))}">${['alpha', 'beta', 'gamma'].map(qchip).join('')}<span class="qchip ${q.total > 6 ? 'over' : ''}">Σ ${q.total}/6${q.extra ? ` <span class="plus">+${q.extra}</span>` : ''}</span></div></div>
-        <div class="pay-row" id="pay-row">${paymentChip(ps)}
+        <div class="pay-row" id="pay-row">${paymentChip(ps)}${canPay ? `
           <button type="button" class="btn btn-ghost btn-sm" data-pay-all="1" ${paidOf(ps) === ps.length ? 'disabled' : ''}>${I.check}${esc(t('pay.allPaid'))}</button>
-          <button type="button" class="btn btn-ghost btn-sm" data-pay-all="0" ${paidOf(ps) ? '' : 'disabled'}>${esc(t('pay.allUnpaid'))}</button></div>
+          <button type="button" class="btn btn-ghost btn-sm" data-pay-all="0" ${paidOf(ps) ? '' : 'disabled'}>${esc(t('pay.allUnpaid'))}</button>` : ''}</div>
         <div class="table-wrap card-table"><table>
         <thead><tr><th>#</th><th>${esc(t('col.name'))}</th><th>${esc(t('col.role'))}</th><th>${esc(t('col.birth'))}</th><th>${esc(t('col.citizenship'))}</th><th>${esc(t('col.visa'))}</th><th>${esc(t('col.payment'))}</th><th>${esc(t('admin.files'))}</th></tr></thead>
         <tbody>${sorted.map((p, i) => `<tr data-pid="${p.id}">
@@ -703,7 +748,7 @@ export async function adminTeamView(ctx, { id }) {
           <td><a class="strong" href="${base}/teams/${id}/participants/${p.id}" data-link>${esc(personName(p))}</a><br><span class="muted small">${esc([p.family_name_native, p.first_name_native].filter(Boolean).join(' '))}</span></td>
           <td>${esc(roleLabel(p))}</td><td>${esc(p.birth_date || '')}</td><td>${esc(p.citizenship || '')}</td>
           <td>${esc(t(p.needs_visa_invitation ? 'common.yes' : 'common.no'))}${visaIncomplete(p) ? ` <span class="tag warn">${esc(t('badge.files'))}</span>` : ''}</td>
-          <td class="pay-cell">${paymentCell(p)}</td>
+          <td class="pay-cell">${paymentCell(p, canPay)}</td>
           <td><div class="row-actions left">
             ${p.has_passport_scan ? `<button type="button" class="btn btn-ghost btn-sm" data-file="${p.id}/files/passport">${esc(t('admin.passport'))}</button>` : ''}
             ${p.has_face_photo ? `<button type="button" class="btn btn-ghost btn-sm" data-file="${p.id}/files/face">${esc(t('admin.photo'))}</button>` : ''}
@@ -730,7 +775,7 @@ export async function adminTeamView(ctx, { id }) {
     adminTeamView(ctx, { id });
   };
 
-  $('#code-form').addEventListener('submit', async (e) => {
+  $('#code-form')?.addEventListener('submit', async (e) => {
     e.preventDefault();
     const input = $('#iao-code'); const err = $('#code-err'); const b = e.currentTarget.querySelector('button');
     const value = input.value.trim().toUpperCase();
@@ -754,18 +799,18 @@ export async function adminTeamView(ctx, { id }) {
   // payment: the row, the "paid x of n" chip and the bulk buttons are refreshed in place (no reload, no scroll jump)
   const applyPayment = (updated) => {
     updated.forEach((np) => { const p = ps.find((x) => String(x.id) === String(np.id)); if (p) Object.assign(p, np); });
-    updated.forEach((np) => { const cell = ctx.root.querySelector(`tr[data-pid="${np.id}"] .pay-cell`); if (cell) cell.innerHTML = paymentCell(np); });
+    updated.forEach((np) => { const cell = ctx.root.querySelector(`tr[data-pid="${np.id}"] .pay-cell`); if (cell) cell.innerHTML = paymentCell(np, canPay); });
     const chip = $('#pay-chip'); if (chip) chip.outerHTML = paymentChip(ps);
     const allBtn = (v) => ctx.root.querySelector(`[data-pay-all="${v}"]`);
     if (allBtn('1')) allBtn('1').disabled = paidOf(ps) === ps.length;
     if (allBtn('0')) allBtn('0').disabled = !paidOf(ps);
   };
   const payAll = async (btn, paid) => {
-    const ok = await confirmDialog({ title: t(paid ? 'pay.allPaidTitle' : 'pay.allUnpaidTitle', { n: ps.length }), text: t('pay.allText'), ok: t(paid ? 'pay.allPaid' : 'pay.allUnpaid'), danger: !paid, focusOk: paid });
-    if (!ok) return;
+    const body = await paymentDialog(null, { paid, n: ps.length });
+    if (!body) return;
     busy(btn, true, t('form.saving'));
     try {
-      const res = await api(`/admin/teams/${id}/payments`, { method: 'POST', body: { is_paid: paid } });
+      const res = await api(`/admin/teams/${id}/payments`, { method: 'POST', body });
       applyPayment(res.participants || []);
       toast(t('pay.savedN', { n: res.updated }), 'ok');
     } catch (err) { toast(err.message, 'error'); } finally { busy(btn, false); applyPayment([]); }
@@ -800,8 +845,8 @@ export async function adminTeamView(ctx, { id }) {
     const tag = e.target.tagName;
     if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target.isContentEditable) return;
     if (document.querySelector('dialog[open]')) return;
-    if (e.key === 'a' && ['pending', 'rejected'].includes(st)) perform('approve');
-    else if (e.key === 'r' && st === 'pending') perform('reject');
+    if (e.key === 'a' && canManage && ['pending', 'rejected'].includes(st)) perform('approve');
+    else if (e.key === 'r' && canManage && st === 'pending') perform('reject');
     else if (e.key === ']' && at >= 0 && at < queue.length - 1) ctx.navigate(`${base}/teams/${queue[at + 1]}`);
     else if (e.key === '[' && at > 0) ctx.navigate(`${base}/teams/${queue[at - 1]}`);
   }, { signal: ctx.signal });
@@ -823,7 +868,8 @@ export async function adminParticipantView(ctx, { id, pid }) {
   const p = (det.participants || []).find((x) => String(x.id) === String(pid));
   if (!p) { ctx.root.innerHTML = `<div class="card state-box"><h2>${esc(t('err.notFound'))}</h2></div>`; return; }
   const d = fromParticipant(p);
-  const payBlock = () => `<div class="pay-row" id="pay-block">${paymentTag(p, true)}
+  const canPay = ctx.can('payments');
+  const payBlock = () => `<div class="pay-row" id="pay-block">${paymentTag(p, canPay)}${amountOf(p)}
     ${p.is_paid && p.paid_at ? `<span class="muted small">${esc(t('pay.paidAt', { date: fmtDateTime(p.paid_at) }))}</span>` : ''}
     ${p.payment_note ? `<span class="muted small">${esc(p.payment_note)}</span>` : ''}</div>`;
   ctx.root.innerHTML = `
@@ -832,7 +878,7 @@ export async function adminParticipantView(ctx, { id, pid }) {
     <form class="readonly-form" onsubmit="return false">${renderSections(d, { readonly: true, fileLinks: true })}</form>`;
   ctx.root.querySelector('form').addEventListener('click', (e) => openFile(e, `/admin/participants/${pid}/files/`));
   ctx.root.addEventListener('click', async (e) => {
-    if (!e.target.closest('[data-pay]')) return;
+    if (!canPay || !e.target.closest('[data-pay]')) return;
     const np = await editPayment(p);
     if (np) { Object.assign(p, np); $('#pay-block').outerHTML = payBlock(); }
   }, { signal: ctx.signal });
@@ -855,9 +901,11 @@ export async function adminSettingsView(ctx) {
   const multi = (key, label) => langs.map((l) => field(`${key}.${l.code}`, `${label} · ${l.label}`, (s[key] || {})[l.code],
     { attrs: `lang="${l.code}" maxlength="${key === 'name' ? 200 : 100}"` })).join('');
 
+  const canEdit = ctx.can('settings');
   const draw = () => {
     ctx.root.innerHTML = `
       <div class="page-head"><h2 class="page-title">${esc(t('set.title'))}</h2><p class="page-lead">${esc(t('set.lead'))}</p></div>
+      ${canEdit ? '' : `<div class="mb-24">${note(esc(t('perm.viewOnlyNote')), 'warn')}</div>`}
       <form id="sform" novalidate class="stack-16">
         <section class="card">
           <h3 class="card-title">${esc(t('set.olympiad'))}</h3>
@@ -886,15 +934,16 @@ export async function adminSettingsView(ctx) {
           <p class="mt-16"><span class="badge ${s.registration_status === 'open' ? 'ok' : 'warn'}">${esc(t('set.status', { status: t(`set.st.${s.registration_status}`) }))}</span></p>
         </section>
         <div id="s-error"></div>
-        <div class="form-actions"><button class="btn btn-primary" type="submit">${I.check}${esc(t('set.save'))}</button></div>
+        ${canEdit ? `<div class="form-actions"><button class="btn btn-primary" type="submit">${I.check}${esc(t('set.save'))}</button></div>` : ''}
       </form>
-      <section class="card danger-zone mt-16">
+      ${canEdit ? `<section class="card danger-zone mt-16">
         <h3 class="card-title">${esc(t('set.season'))}</h3>
         <p class="card-sub">${esc(t('set.seasonLead'))}</p>
         <button type="button" class="btn btn-danger" id="btn-archive-all">${esc(t('set.archiveAll'))}</button>
-      </section>`;
+      </section>` : ''}`;
 
     const form = $('#sform');
+    if (!canEdit) { form.querySelectorAll('input').forEach((i) => { i.disabled = true; }); return; }
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const v = Object.fromEntries(new FormData(form).entries());
@@ -939,6 +988,162 @@ export async function adminSettingsView(ctx) {
   };
   draw();
 }
+// ---------------------------------------------------------------- admin panel users and permissions
+
+const PERM_KEYS = ['teams.manage', 'payments', 'settings', 'users'];
+const isSuper = (u) => (u.permissions || []).includes('*');
+const permBadges = (u) => (isSuper(u)
+  ? `<span class="tag ok">${I.check}${esc(t('users.superBadge'))}</span>`
+  : (u.permissions || []).length
+    ? u.permissions.map((p) => `<span class="tag">${esc(t(`perm.short.${p}`))}</span>`).join('')
+    : `<span class="tag muted">${esc(t('users.viewOnly'))}</span>`);
+
+/** Add or edit dialog. Resolves to { name, email?, password?, permissions } or null. */
+function userDialog(u = null) {
+  return new Promise((resolve) => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'dialog dialog-wide';
+    dlg.setAttribute('aria-labelledby', 'usr-title');
+    const has = (p) => !!u && (u.permissions || []).includes(p);
+    dlg.innerHTML = `<h2 id="usr-title">${esc(u ? t('users.editTitle', { name: u.name }) : t('users.addTitle'))}</h2>
+      <div class="dlg-field"><label class="dlg-label" for="usr-name">${esc(t('users.name'))}</label>
+        <input id="usr-name" class="input" maxlength="255" autocomplete="off" value="${esc(u ? u.name : '')}"></div>
+      ${u ? `<p class="muted small">${esc(u.email)}</p>` : `<div class="dlg-field"><label class="dlg-label" for="usr-email">${esc(t('users.email'))}</label>
+        <input id="usr-email" class="input" type="email" maxlength="255" autocomplete="off" spellcheck="false"></div>
+      <div class="dlg-field"><label class="dlg-label" for="usr-password">${esc(t('users.password'))} <span class="opt">${esc(t('common.optional'))}</span></label>
+        <input id="usr-password" class="input" type="text" minlength="8" maxlength="100" autocomplete="off" spellcheck="false">
+        <p class="hint">${esc(t('users.passwordHint'))}</p></div>`}
+      <fieldset class="dlg-field perm-list"><legend class="dlg-label">${esc(t('users.permissions'))}</legend>
+        <p class="hint">${esc(t('users.viewAlways'))}</p>
+        <label class="checkbox"><input type="checkbox" id="usr-super" ${has('*') ? 'checked' : ''}><span><strong>${esc(t('users.super'))}</strong></span></label>
+        ${PERM_KEYS.map((p) => `<label class="checkbox perm-item"><input type="checkbox" data-perm="${p}" ${has(p) ? 'checked' : ''} ${has('*') ? 'disabled' : ''}><span>${esc(t(`perm.${p}`))}</span></label>`).join('')}
+      </fieldset>
+      <p class="err" id="usr-err" role="alert"></p>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" value="cancel">${esc(t('common.cancel'))}</button>
+        <button type="button" class="btn btn-primary" value="ok">${I.check}${esc(u ? t('common.save') : t('users.add'))}</button>
+      </div>`;
+    document.body.appendChild(dlg);
+    const done = (v) => { dlg.close(); dlg.remove(); resolve(v); };
+    const fail = (msg) => { const err = dlg.querySelector('#usr-err'); err.textContent = msg; err.style.display = 'flex'; };
+    dlg.querySelector('#usr-super').addEventListener('change', (e) => {
+      dlg.querySelectorAll('[data-perm]').forEach((c) => { c.disabled = e.target.checked; });
+    });
+    const save = () => {
+      const name = dlg.querySelector('#usr-name').value.trim();
+      if (!name) { fail(t('err.required')); dlg.querySelector('#usr-name').focus(); return; }
+      const body = { name };
+      if (!u) {
+        const email = dlg.querySelector('#usr-email').value.trim();
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { fail(t('err.email')); dlg.querySelector('#usr-email').focus(); return; }
+        body.email = email;
+        const pw = dlg.querySelector('#usr-password').value;
+        if (pw && pw.length < 8) { fail(t('err.minPassword')); dlg.querySelector('#usr-password').focus(); return; }
+        if (pw) body.password = pw;
+      }
+      body.permissions = dlg.querySelector('#usr-super').checked ? ['*'] : [...dlg.querySelectorAll('[data-perm]:checked')].map((c) => c.dataset.perm);
+      done(body);
+    };
+    dlg.addEventListener('click', (e) => {
+      const b = e.target.closest('.dialog-actions button');
+      if (b) { if (b.value === 'ok') save(); else done(null); }
+      else if (e.target === dlg) done(null);
+    });
+    dlg.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target.tagName === 'INPUT' && e.target.type !== 'checkbox') { e.preventDefault(); save(); } });
+    dlg.addEventListener('cancel', (e) => { e.preventDefault(); done(null); });
+    dlg.showModal();
+    dlg.querySelector('#usr-name').focus();
+  });
+}
+
+/** Login + password after creating a user or resetting a password (shown once). */
+const showUserCredentials = (res) => confirmDialog({
+  title: t('adm.credTitle'),
+  html: `<div class="cred">${[[t('adm.login'), res.login], [t('adm.password'), res.password]].map(([label, value]) => `<div class="cred-row"><span>${esc(label)}</span><code>${esc(value)}</code>
+    <button type="button" class="btn btn-ghost btn-sm" data-copy="${esc(value)}">${esc(t('common.copy'))}</button></div>`).join('')}</div>
+    ${note(esc(t(res.email_sent ? 'users.credSent' : 'users.credNotSent')), res.email_sent ? 'ok' : 'warn')}`,
+  ok: t('common.close'), okOnly: true,
+});
+
+export async function adminUsersView(ctx) {
+  ctx.root.innerHTML = spinner();
+  if (!ctx.can('users')) { ctx.root.innerHTML = `<div class="card state-box">${I.alert}<h2>${esc(t('err.forbidden'))}</h2><p>${esc(t('perm.noAccess'))}</p></div>`; return; }
+  let users;
+  try { users = await api('/admin/users'); } catch (err) { failed(ctx, err, () => adminUsersView(ctx)); return; }
+  loadTeams().then((list) => setPending(ctx, list)).catch(() => {});
+  const me = ctx.user;
+  const apiErr = (err) => toast(err instanceof ApiError && err.status === 422 && Object.keys(err.fields).length ? Object.values(err.fields).join(' ') : err.message, 'error');
+
+  const row = (u) => {
+    const self = me && String(u.id) === String(me.id);
+    return `<tr data-uid="${u.id}">
+      <td><span class="strong">${esc(u.name)}</span>${self ? ` <span class="muted small">(${esc(t('users.you'))})</span>` : ''}<br><span class="muted small">${esc(u.email)}</span></td>
+      <td><div class="tags">${permBadges(u)}</div></td>
+      <td class="muted small">${esc(fmtDateTime(u.created_at))}</td>
+      <td><div class="row-actions">
+        <button type="button" class="btn btn-ghost btn-sm" data-edit="${u.id}">${I.edit}${esc(t('users.edit'))}</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-reset="${u.id}">${I.key}${esc(t('users.resetPassword'))}</button>
+        ${self ? '' : `<button type="button" class="icon-btn" data-del="${u.id}" aria-label="${esc(t('users.delete'))}: ${esc(u.name)}" title="${esc(t('users.delete'))}">${I.trash}</button>`}
+      </div></td></tr>`;
+  };
+  const render = () => {
+    $('#users-body').innerHTML = users.length ? users.map(row).join('') : `<tr><td colspan="4"><div class="empty"><h3>${esc(t('users.empty'))}</h3></div></td></tr>`;
+  };
+
+  ctx.root.innerHTML = `
+    <div class="page-head row-between">
+      <div><h2 class="page-title">${esc(t('users.title'))}</h2><p class="page-lead">${esc(t('users.lead'))}</p></div>
+      <div class="btn-row"><button type="button" class="btn btn-primary" id="btn-add-user">${I.plus}${esc(t('users.add'))}</button></div>
+    </div>
+    <div class="table-wrap card-table"><table>
+      <thead><tr><th>${esc(t('users.name'))}</th><th>${esc(t('users.permissions'))}</th><th>${esc(t('users.created'))}</th><th></th></tr></thead>
+      <tbody id="users-body"></tbody></table></div>`;
+  render();
+
+  $('#btn-add-user').addEventListener('click', async (e) => {
+    const body = await userDialog();
+    if (!body) return;
+    busy(e.currentTarget, true, t('form.saving'));
+    try {
+      const res = await api('/admin/users', { method: 'POST', body });
+      users.push(res.user); users.sort((a, b) => a.name.localeCompare(b.name)); render();
+      toast(t('users.added', { email: res.login }), 'ok');
+      await showUserCredentials(res);
+    } catch (err) { apiErr(err); } finally { busy($('#btn-add-user'), false); }
+  });
+  ctx.root.addEventListener('click', async (e) => {
+    const find = (id) => users.find((x) => String(x.id) === String(id));
+    const ed = e.target.closest('[data-edit]');
+    if (ed) {
+      const u = find(ed.dataset.edit); const body = await userDialog(u);
+      if (!body) return;
+      try {
+        const res = await api(`/admin/users/${u.id}`, { method: 'PATCH', body });
+        Object.assign(u, res.user); render(); toast(t('users.saved'), 'ok');
+        if (me && String(u.id) === String(me.id)) await ctx.refreshUser();   // own permissions changed: header links follow
+      } catch (err) { apiErr(err); }
+      return;
+    }
+    const rs = e.target.closest('[data-reset]');
+    if (rs) {
+      const u = find(rs.dataset.reset);
+      const ok = await confirmDialog({ title: t('users.resetTitle', { name: u.name }), text: t('users.resetText'), ok: t('users.resetPassword'), focusOk: true });
+      if (!ok) return;
+      try { const res = await api(`/admin/users/${u.id}/reset-password`, { method: 'POST' }); await showUserCredentials(res); }
+      catch (err) { apiErr(err); }
+      return;
+    }
+    const del = e.target.closest('[data-del]');
+    if (del) {
+      const u = find(del.dataset.del);
+      const ok = await confirmDialog({ title: t('users.deleteTitle', { name: u.name }), text: t('users.deleteText'), ok: t('users.delete'), danger: true });
+      if (!ok) return;
+      try { await api(`/admin/users/${u.id}`, { method: 'DELETE' }); users.splice(users.indexOf(u), 1); render(); toast(t('users.removed'), 'ok'); }
+      catch (err) { apiErr(err); }
+    }
+  }, { signal: ctx.signal });
+}
+
 function showErrs(form, errs) {
   form.querySelectorAll('[data-field]').forEach((box) => {
     const msg = errs[box.dataset.field] || '';

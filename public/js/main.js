@@ -29,6 +29,7 @@ const ADMIN_ROUTES = [
   ['/teams/:id', adminView('adminTeamView')],
   ['/teams/:id/participants/:pid', adminView('adminParticipantView')],
   ['/settings', adminView('adminSettingsView')],
+  ['/users', adminView('adminUsersView')],
 ];
 const ADMIN_HASH = (window.IAO_CONFIG && window.IAO_CONFIG.adminKeyHash) || '';
 const ADMIN_BASE_KEY = 'iao-admin-base';
@@ -54,6 +55,8 @@ const ctx = {
   adminPending: 0,
   token: getToken,
   setUser(u) { ctx.user = u; renderHeader(); },
+  /** Admin panel permission check: '*' (full access) or the named permission. Every admin may view. */
+  can(p) { const u = ctx.user; if (!u || !u.is_admin) return false; const ps = u.permissions || []; return ps.includes('*') || ps.includes(p); },
   async refreshUser() { const u = await api('/auth/me'); ctx.setUser(u); return u; },
   rememberAdmin() { try { localStorage.setItem(ADMIN_BASE_KEY, ctx.adminBase); } catch (e) { /* ignore */ } },
   navigate,
@@ -168,7 +171,8 @@ function renderHeader() {
   const onLogin = location.pathname === '/login';
   $('#user').innerHTML = u ? `
     ${admin && ctx.adminBase ? `<a href="${esc(ctx.adminBase)}" data-link class="hdr-link">${esc(t('nav.teams'))}${ctx.adminPending ? ` <span class="pill hot" title="${esc(t('adm.tab.pending'))}">${ctx.adminPending}</span>` : ''}</a>
-      <a href="${esc(ctx.adminBase)}/settings" data-link class="hdr-link">${esc(t('nav.settings'))}</a>` : ''}
+      ${ctx.can('settings') ? `<a href="${esc(ctx.adminBase)}/settings" data-link class="hdr-link">${esc(t('nav.settings'))}</a>` : ''}
+      ${ctx.can('users') ? `<a href="${esc(ctx.adminBase)}/users" data-link class="hdr-link">${esc(t('nav.users'))}</a>` : ''}` : ''}
     ${!admin && u.team && u.email_verified_at ? `<a href="/" data-link class="hdr-link">${esc(u.team.country || t('nav.myTeam'))}</a>` : ''}
     <button type="button" class="hdr-btn" id="btn-logout">${esc(t('nav.logout'))}</button>`
     : current && current.area === 'admin-login' ? ''

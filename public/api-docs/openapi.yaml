@@ -116,6 +116,20 @@ components:
           maxLength: 255
           readOnly: true
           description: Tashkilotchilar izohi (kvitansiya raqami va h.k.)
+        payment_amount:
+          type: number
+          format: double
+          nullable: true
+          readOnly: true
+          example: 150
+          description: To'lov summasi
+        payment_currency:
+          type: string
+          nullable: true
+          maxLength: 3
+          readOnly: true
+          example: USD
+          description: Valyuta (USD, EUR, UZS, RUB). Summa bor, valyuta yo'q bo'lsa — USD
         family_name_en:
           type: string
           description: 1.1 Familiya (inglizcha). Faqat 26 ta lotin harfi; faqat BOSH HARFLARDA yozish rad etiladi
@@ -578,6 +592,25 @@ components:
           format: binary
           description: 8.7 Yuz surati, faqat *.jpg, ≤5 MB, kamida 900×1200 px. Faqat `needs_visa_invitation=true` bo'lsa majburiy. Saqlanganda
             `Face-Familiya.jpg`
+    AdminUser:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        email:
+          type: string
+        permissions:
+          type: array
+          items:
+            type: string
+          description: "Ruxsatlar: ['*'] — hammasi; aks holda teams.manage, payments, settings, users dan tanlanganlari"
+        is_super:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
     ValidationError:
       type: object
       properties:
@@ -1374,10 +1407,11 @@ paths:
     patch:
       tags:
       - Admin
-      summary: Ishtirokchi to'lovi — qildi / qilmadi
+      summary: Ishtirokchi to'lovi — qildi / qilmadi, summa (ruxsat `payments`)
       description: |
         To'lov holatini belgilaydi. `is_paid=true` bo'lganda `paid_at` bir marta qo'yiladi (qayta saqlashda o'zgarmaydi),
-        `false` bo'lganda tozalanadi. `payment_note` yuborilmasa eski izoh saqlanib qoladi; bo'sh satr yuborilsa o'chiriladi.
+        `false` bo'lganda tozalanadi. `payment_note`, `payment_amount`, `payment_currency` yuborilmasa eski qiymat saqlanib qoladi;
+        `null` yuborilsa tozalanadi. Summa bor, valyuta yo'q bo'lsa — USD.
       security: *id008
       parameters:
       - *id009
@@ -1392,6 +1426,16 @@ paths:
               properties:
                 is_paid:
                   type: boolean
+                payment_amount:
+                  type: number
+                  nullable: true
+                  minimum: 0
+                  example: 150
+                payment_currency:
+                  type: string
+                  nullable: true
+                  maxLength: 3
+                  example: USD
                 payment_note:
                   type: string
                   nullable: true
@@ -1421,8 +1465,8 @@ paths:
     post:
       tags:
       - Admin
-      summary: Jamoa ishtirokchilarini bir yo'la to'lov qildi / qilmadi deb belgilash
-      description: '`participants` berilmasa — jamoaning barcha ishtirokchilari. Boshqa jamoa ishtirokchisi id''si 422 qaytaradi.'
+      summary: Jamoa ishtirokchilarini bir yo'la to'lov qildi / qilmadi deb belgilash (ruxsat `payments`)
+      description: '`participants` berilmasa — jamoaning barcha ishtirokchilari. Summa har bir ishtirokchiga alohida yoziladi. Boshqa jamoa ishtirokchisi id''si 422 qaytaradi.'
       security: *id008
       parameters:
       - *id009
@@ -1442,6 +1486,14 @@ paths:
                   items:
                     type: integer
                   description: Faqat shu ishtirokchilar (ixtiyoriy)
+                payment_amount:
+                  type: number
+                  nullable: true
+                  minimum: 0
+                payment_currency:
+                  type: string
+                  nullable: true
+                  maxLength: 3
                 payment_note:
                   type: string
                   nullable: true
@@ -1479,6 +1531,189 @@ paths:
           $ref: '#/components/responses/NotFound'
         '422':
           $ref: '#/components/responses/Validation'
+  /admin/permissions:
+    get:
+      tags:
+      - Admin
+      summary: Ruxsatlar lug'ati
+      description: '`all` — hamma ruxsat kaliti (`*`), `permissions` — kalit → tavsif. Har bir administrator jamoalarni ko''radi; qolgani shu ruxsatlar bilan.'
+      security: *id008
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  all:
+                    type: string
+                    example: '*'
+                  permissions:
+                    type: object
+                    additionalProperties:
+                      type: string
+                    example:
+                      teams.manage: Jamoalarni boshqarish
+                      payments: Ishtirokchilar to'lovini belgilash
+                      settings: Olimpiada sozlamalari va yangi mavsum
+                      users: Admin paneli foydalanuvchilarini boshqarish
+  /admin/users:
+    get:
+      tags:
+      - Admin
+      summary: Admin paneli foydalanuvchilari (ruxsat `users`)
+      security: *id008
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AdminUser'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+    post:
+      tags:
+      - Admin
+      summary: Yangi administrator (ruxsat `users`)
+      description: Parol berilmasa yaratiladi, javobda bir marta qaytadi va emailga yuboriladi. Jamoa foydalanuvchisi emaili bilan yaratib bo'lmaydi.
+      security: *id008
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - name
+              - email
+              - permissions
+              properties:
+                name:
+                  type: string
+                email:
+                  type: string
+                  format: email
+                password:
+                  type: string
+                  minLength: 8
+                  nullable: true
+                permissions:
+                  type: array
+                  items:
+                    type: string
+                    enum: ['*', teams.manage, payments, settings, users]
+      responses:
+        '201':
+          description: Yaratildi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/AdminUser'
+                  login:
+                    type: string
+                  password:
+                    type: string
+                  email_sent:
+                    type: boolean
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /admin/users/{id}:
+    patch:
+      tags:
+      - Admin
+      summary: Ism va ruxsatlarni o'zgartirish (ruxsat `users`)
+      description: O'zining `users` ruxsatini olib tashlab bo'lmaydi (422).
+      security: *id008
+      parameters:
+      - *id009
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                name:
+                  type: string
+                permissions:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: Saqlandi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  user:
+                    $ref: '#/components/schemas/AdminUser'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+    delete:
+      tags:
+      - Admin
+      summary: Administratorni o'chirish (ruxsat `users`)
+      description: O'zini va foydalanuvchilarni boshqara oladigan oxirgi administratorni o'chirib bo'lmaydi (422).
+      security: *id008
+      parameters:
+      - *id009
+      responses:
+        '200':
+          description: O'chirildi
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /admin/users/{id}/reset-password:
+    post:
+      tags:
+      - Admin
+      summary: Administratorga yangi parol (ruxsat `users`)
+      description: Yangi parol javobda bir marta qaytadi va emailga yuboriladi; eski tokenlar bekor qilinadi.
+      security: *id008
+      parameters:
+      - *id009
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  login:
+                    type: string
+                  password:
+                    type: string
+                  email_sent:
+                    type: boolean
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /admin/participants/{id}/files/{type}:
     get:
       tags:

@@ -326,6 +326,8 @@ const PERSONAL_COLUMNS = [
   ['Visa invitation', 10, (p) => (p.needs_visa_invitation ? 'Yes' : 'No')],
   ['Payment', 10, (p) => (p.is_paid ? 'Paid' : 'Not paid')],
   ['Paid on', 13, (p) => (p.is_paid && p.paid_at ? dotDate(p.paid_at) : '')],
+  ['Amount', 10, (p) => (p.payment_amount !== null && p.payment_amount !== undefined ? Number(p.payment_amount) : '')],
+  ['Currency', 8, (p) => clean(p.payment_currency)],
   ['Payment note', 24, (p) => clean(p.payment_note)],
   ['Passport number', 16, (p) => clean(p.passport_number)],
   ['Passport issued', 13, (p) => dotDate(p.passport_issue_date)],

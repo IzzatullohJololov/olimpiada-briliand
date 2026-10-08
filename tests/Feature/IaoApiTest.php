@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\Team;
 use App\Models\User;
+use App\Notifications\AdminCredentials;
 use App\Notifications\NewTeamSubmission;
 use App\Notifications\TeamReopened;
 use App\Notifications\TeamSubmitted;
@@ -11,6 +12,7 @@ use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Auth\Notifications\VerifyEmail;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\URL;
@@ -165,7 +167,7 @@ class IaoApiTest extends TestCase
         $this->getJson('/api/admin/teams')->assertForbidden();
 
         $admin = $this->makeTeam('Admin land', 'admin@example.ug');
-        $admin->forceFill(['is_admin' => true])->save();
+        $admin->setAdminPermissions(['*']);
         Sanctum::actingAs($admin);
 
         $this->getJson('/api/admin/teams')->assertOk()->assertJsonFragment(['country' => 'Uganda']);
@@ -276,7 +278,7 @@ class IaoApiTest extends TestCase
         config(['iao.organizer_emails' => []]);
 
         $admin = $this->makeTeam('Admin land', 'admin@example.ug');
-        $admin->forceFill(['is_admin' => true])->save();
+        $admin->setAdminPermissions(['*']);
         $this->assertSame(['admin@example.ug'], Team::organizerEmails());
 
         $user = $this->makeTeam();
@@ -313,7 +315,7 @@ class IaoApiTest extends TestCase
         $id = $this->postJson('/api/participants', $this->student())->json('data.id');
 
         $admin = $this->makeTeam('Admin land', 'admin@example.ug');
-        $admin->forceFill(['is_admin' => true])->save();
+        $admin->setAdminPermissions(['*']);
         Sanctum::actingAs($admin);
 
         $this->patchJson("/api/admin/participants/{$id}/payment", ['is_paid' => 'yes'])->assertStatus(422)->assertJsonValidationErrors('is_paid');
@@ -355,7 +357,7 @@ class IaoApiTest extends TestCase
         $c = $this->postJson('/api/participants', $this->student(['family_name_en' => 'Odhiambo', 'email' => 'o@example.ke']))->json('data.id');
 
         $admin = $this->makeTeam('Admin land', 'admin@example.ug');
-        $admin->forceFill(['is_admin' => true])->save();
+        $admin->setAdminPermissions(['*']);
         Sanctum::actingAs($admin);
         $teamId = $user->team->id;
 
@@ -375,5 +377,131 @@ class IaoApiTest extends TestCase
 
         $this->getJson("/api/admin/teams/{$teamId}")->assertOk()->assertJsonPath('payments.paid', 1)->assertJsonPath('payments.total', 2);
         $this->getJson('/api/admin/teams')->assertOk()->assertJsonFragment(['country' => 'Uganda', 'paid_count' => 1]);
+    }
+
+    public function test_payment_amount_and_currency_are_saved(): void
+    {
+        $user = $this->makeTeam();
+        Sanctum::actingAs($user);
+        $id = $this->postJson('/api/participants', $this->student())->json('data.id');
+
+        $admin = $this->makeTeam('Admin land', 'admin@example.ug');
+        $admin->setAdminPermissions(['*']);
+        Sanctum::actingAs($admin);
+
+        $this->patchJson("/api/admin/participants/{$id}/payment", ['is_paid' => true, 'payment_amount' => -5])
+            ->assertStatus(422)->assertJsonValidationErrors('payment_amount');
+        $this->patchJson("/api/admin/participants/{$id}/payment", ['is_paid' => true, 'payment_amount' => 150, 'payment_currency' => 'eur'])
+            ->assertOk()->assertJsonPath('participant.payment_amount', 150)->assertJsonPath('participant.payment_currency', 'EUR');
+
+        // Summa yuborilmasa — o'zgarmaydi; valyutasiz summa — USD
+        $this->patchJson("/api/admin/participants/{$id}/payment", ['is_paid' => true, 'payment_note' => 'x'])
+            ->assertOk()->assertJsonPath('participant.payment_amount', 150);
+        $this->patchJson("/api/admin/participants/{$id}/payment", ['is_paid' => true, 'payment_amount' => 99.5, 'payment_currency' => null])
+            ->assertOk()->assertJsonPath('participant.payment_amount', 99.5)->assertJsonPath('participant.payment_currency', 'USD');
+
+        // Jamoa bo'yicha summa har bir ishtirokchiga yoziladi
+        $this->postJson("/api/admin/teams/{$user->team->id}/payments", ['is_paid' => true, 'payment_amount' => 200, 'payment_currency' => 'USD'])
+            ->assertOk()->assertJsonPath('participants.0.payment_amount', 200);
+
+        Sanctum::actingAs($user);
+        $this->getJson("/api/participants/{$id}")->assertOk()->assertJsonPath('data.payment_amount', 200)->assertJsonPath('data.payment_currency', 'USD');
+
+        Sanctum::actingAs($admin);
+        $csv = $this->get('/api/admin/export/participants.csv')->assertOk()->streamedContent();
+        $this->assertStringContainsString('payment_amount', $csv);
+        $this->assertStringContainsString('200.00', $csv);
+    }
+
+    // ---------------------------------------------------------------- admin foydalanuvchilar va ruxsatlar
+
+    private function makeAdmin(array $permissions, string $email = 'admin@example.ug'): User
+    {
+        $u = User::create(['name' => 'Admin', 'email' => $email, 'password' => 'secret123']);
+        $u->forceFill(['email_verified_at' => now()])->save();
+
+        return $u->setAdminPermissions($permissions);
+    }
+
+    public function test_admin_permissions_restrict_actions(): void
+    {
+        $team = $this->makeTeam();
+        Sanctum::actingAs($team);
+        $pid = $this->postJson('/api/participants', $this->student())->json('data.id');
+        $teamId = $team->team->id;
+
+        // Faqat to'lov ruxsati: ko'radi, to'lov belgilaydi, lekin jamoani boshqara olmaydi
+        $cashier = $this->makeAdmin(['payments'], 'cashier@example.ug');
+        Sanctum::actingAs($cashier);
+        $this->getJson('/api/admin/teams')->assertOk();
+        $this->getJson("/api/admin/teams/{$teamId}")->assertOk();
+        $this->get('/api/admin/export/participants.csv')->assertOk();
+        $this->patchJson("/api/admin/participants/{$pid}/payment", ['is_paid' => true])->assertOk();
+        $this->postJson("/api/admin/teams/{$teamId}/reopen")->assertForbidden();
+        $this->postJson("/api/admin/teams/{$teamId}/approve")->assertForbidden();
+        $this->deleteJson("/api/admin/teams/{$teamId}")->assertForbidden();
+        $this->putJson('/api/admin/settings', [])->assertForbidden();
+        $this->postJson('/api/admin/teams/archive-all')->assertForbidden();
+        $this->getJson('/api/admin/users')->assertForbidden();
+        $this->getJson('/api/auth/me')->assertOk()->assertJsonPath('permissions', ['payments']);
+
+        // Jamoa ruxsati: boshqaradi, to'lovni emas
+        $manager = $this->makeAdmin(['teams.manage'], 'manager@example.ug');
+        Sanctum::actingAs($manager);
+        $this->postJson("/api/admin/teams/{$teamId}/reopen")->assertOk();
+        $this->patchJson("/api/admin/participants/{$pid}/payment", ['is_paid' => false])->assertForbidden();
+
+        // Jamoa foydalanuvchisi umuman kira olmaydi
+        Sanctum::actingAs($team);
+        $this->getJson('/api/admin/teams')->assertForbidden();
+        $this->getJson('/api/auth/me')->assertOk()->assertJsonPath('permissions', []);
+    }
+
+    public function test_super_admin_manages_admin_users(): void
+    {
+        Notification::fake();
+        $super = $this->makeAdmin(['*']);
+        Sanctum::actingAs($super);
+
+        $this->getJson('/api/admin/permissions')->assertOk()->assertJsonStructure(['all', 'permissions' => ['payments']]);
+
+        // Noto'g'ri ruxsat kaliti
+        $this->postJson('/api/admin/users', ['name' => 'X', 'email' => 'x@example.ug', 'permissions' => ['hack']])
+            ->assertStatus(422)->assertJsonValidationErrors('permissions.0');
+
+        $res = $this->postJson('/api/admin/users', ['name' => 'Kassir', 'email' => 'kassir@example.ug', 'permissions' => ['payments']])
+            ->assertCreated()->assertJsonPath('user.permissions', ['payments'])->assertJsonPath('login', 'kassir@example.ug');
+        $this->assertNotEmpty($res->json('password'));
+        $newId = $res->json('user.id');
+        Notification::assertSentTo(User::find($newId), AdminCredentials::class);
+
+        // Yangi admin shu parol bilan kira oladi (login so'rovi Sanctum actingAs ostida ishlamaydi, Hash orqali)
+        $created = User::find($newId);
+        $this->assertTrue(Hash::check($res->json('password'), $created->password));
+        $this->assertTrue($created->is_admin);
+        $this->assertNotNull($created->email_verified_at);
+
+        // Jamoa emaili bilan admin yaratib bo'lmaydi
+        $this->makeTeam();
+        Sanctum::actingAs($super);
+        $this->postJson('/api/admin/users', ['name' => 'Y', 'email' => 'uganda@example.ug', 'permissions' => []])
+            ->assertStatus(422)->assertJsonValidationErrors('email');
+
+        // Ro'yxat, tahrirlash, parol, o'chirish
+        $this->getJson('/api/admin/users')->assertOk()->assertJsonCount(2)->assertJsonFragment(['email' => 'kassir@example.ug']);
+        $this->patchJson("/api/admin/users/{$newId}", ['permissions' => ['payments', 'teams.manage'], 'name' => 'Kassir 2'])
+            ->assertOk()->assertJsonPath('user.permissions', ['teams.manage', 'payments'])->assertJsonPath('user.name', 'Kassir 2');
+        $this->postJson("/api/admin/users/{$newId}/reset-password")->assertOk()->assertJsonStructure(['password']);
+
+        // O'zining users ruxsatini olib tashlay olmaydi, o'zini o'chira olmaydi
+        $this->patchJson("/api/admin/users/{$super->id}", ['permissions' => ['payments']])->assertStatus(422)->assertJsonValidationErrors('permissions');
+        $this->deleteJson("/api/admin/users/{$super->id}")->assertStatus(422);
+
+        $this->deleteJson("/api/admin/users/{$newId}")->assertOk();
+        $this->assertNull(User::find($newId));
+
+        // Jamoa foydalanuvchisi admin emas — 404
+        $teamUser = User::where('email', 'uganda@example.ug')->first();
+        $this->patchJson("/api/admin/users/{$teamUser->id}", ['name' => 'Z'])->assertNotFound();
     }
 }

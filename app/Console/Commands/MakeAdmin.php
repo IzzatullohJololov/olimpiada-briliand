@@ -4,23 +4,36 @@ namespace App\Console\Commands;
 
 use App\Models\User;
 use Illuminate\Console\Command;
+use Illuminate\Support\Str;
 
+/**
+ * Bosh administrator (barcha ruxsatlar). Foydalanuvchi bo'lmasa — yaratiladi va parol ko'rsatiladi.
+ * Qolgan administratorlarni admin panelidagi "Foydalanuvchilar" bo'limidan qo'shish mumkin.
+ */
 class MakeAdmin extends Command
 {
-    protected $signature = 'iao:make-admin {email : Mavjud foydalanuvchi emaili}';
-    protected $description = 'Foydalanuvchini administrator qiladi';
+    protected $signature = 'iao:make-admin {email : Foydalanuvchi emaili} {--name= : Yangi foydalanuvchi ismi}';
+    protected $description = 'Foydalanuvchini bosh administrator qiladi (barcha ruxsatlar); yo\'q bo\'lsa yaratadi';
 
     public function handle(): int
     {
-        $user = User::where('email', $this->argument('email'))->first();
+        $email = $this->argument('email');
+        $user = User::where('email', $email)->first();
+        $password = null;
 
         if (!$user) {
-            $this->error('Bunday foydalanuvchi topilmadi. Avval /api/auth/register orqali ro\'yxatdan o\'ting.');
-            return self::FAILURE;
+            $password = Str::password(12, symbols: false);
+            $user = new User(['name' => $this->option('name') ?: 'Administrator', 'email' => $email]);
+            $user->password = $password;
+            $user->email_verified_at = now();
+            $user->save();
         }
 
-        $user->forceFill(['is_admin' => true])->save();
-        $this->info("{$user->email} endi administrator.");
+        $user->setAdminPermissions([User::ALL]);
+        $this->info("{$user->email} endi bosh administrator (barcha ruxsatlar).");
+        if ($password) {
+            $this->line("Parol: {$password}   (faqat bir marta ko'rsatiladi)");
+        }
 
         return self::SUCCESS;
     }

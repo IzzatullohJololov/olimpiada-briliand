@@ -25,7 +25,7 @@ class AdminController extends Controller
     /** Ustun tartibi (CSV eksport) — anketadagi band tartibida */
     private const CSV_COLUMNS = [
         'status', 'student_group', 'previous_prizewinner', 'needs_visa_invitation',
-        'is_paid', 'paid_at', 'payment_note',
+        'is_paid', 'paid_at', 'payment_amount', 'payment_currency', 'payment_note',
         'family_name_en', 'first_name_en', 'family_name_native', 'first_name_native',
         'birth_date', 'birth_place', 'sex',
         'citizenship', 'other_citizenships', 'ethnicity', 'previous_visits_uz',
@@ -79,21 +79,34 @@ class AdminController extends Controller
 
     // ---------------------------------------------------------------- payments
 
+    /** To'lov so'rovining umumiy validatsiya qoidalari (summa va valyuta ixtiyoriy) */
+    private const PAYMENT_RULES = [
+        'is_paid' => ['required', 'boolean'],
+        'payment_note' => ['nullable', 'string', 'max:255'],
+        'payment_amount' => ['nullable', 'numeric', 'min:0', 'max:999999999.99'],
+        'payment_currency' => ['nullable', 'string', 'size:3', 'alpha'],
+    ];
+
+    /** Berilmagan maydon null (o'zgarmaydi), bo'sh yuborilgan — '' (tozalanadi) */
+    private static function paymentArgs(array $data, Participant $p): array
+    {
+        return [
+            (bool) $data['is_paid'],
+            array_key_exists('payment_note', $data) ? $data['payment_note'] : $p->payment_note,
+            array_key_exists('payment_amount', $data) ? ($data['payment_amount'] ?? '') : null,
+            array_key_exists('payment_currency', $data) ? ($data['payment_currency'] ?? '') : null,
+        ];
+    }
+
     /**
-     * Bir ishtirokchining to'lov holati: to'lov qildi / qilmadi (+ ixtiyoriy izoh, masalan kvitansiya raqami).
-     * PATCH /admin/participants/{id}/payment  { is_paid: true|false, payment_note?: string }
+     * Bir ishtirokchining to'lov holati: to'lov qildi / qilmadi, summa, valyuta, izoh (masalan kvitansiya raqami).
+     * PATCH /admin/participants/{id}/payment  { is_paid, payment_amount?, payment_currency?, payment_note? }
      */
     public function updatePayment(Request $request, Participant $participant): JsonResponse
     {
-        $data = $request->validate([
-            'is_paid' => ['required', 'boolean'],
-            'payment_note' => ['nullable', 'string', 'max:255'],
-        ]);
+        $data = $request->validate(self::PAYMENT_RULES);
 
-        $participant->setPayment(
-            (bool) $data['is_paid'],
-            array_key_exists('payment_note', $data) ? $data['payment_note'] : $participant->payment_note,
-        );
+        $participant->setPayment(...self::paymentArgs($data, $participant));
 
         return response()->json([
             'message' => $participant->is_paid ? 'To\'lov belgilandi.' : 'To\'lov bekor qilindi.',
@@ -103,14 +116,12 @@ class AdminController extends Controller
 
     /**
      * Jamoa ishtirokchilarini bir yo'la belgilash (odatda to'lov jamoa uchun bitta summada keladi).
-     * POST /admin/teams/{id}/payments  { is_paid: true|false, participants?: [id, ...], payment_note?: string }
-     * `participants` berilmasa — jamoaning barcha ishtirokchilari.
+     * POST /admin/teams/{id}/payments  { is_paid, participants?: [id, ...], payment_amount?, payment_currency?, payment_note? }
+     * `participants` berilmasa — jamoaning barcha ishtirokchilari. Summa har bir ishtirokchiga alohida yoziladi.
      */
     public function updateTeamPayments(Request $request, Team $team): JsonResponse
     {
-        $data = $request->validate([
-            'is_paid' => ['required', 'boolean'],
-            'payment_note' => ['nullable', 'string', 'max:255'],
+        $data = $request->validate(self::PAYMENT_RULES + [
             'participants' => ['nullable', 'array'],
             'participants.*' => ['integer', Rule::exists('participants', 'id')->where('team_id', $team->id)],
         ]);
@@ -123,7 +134,7 @@ class AdminController extends Controller
         $updated = DB::transaction(function () use ($query, $data) {
             $list = $query->get();
             foreach ($list as $p) {
-                $p->setPayment((bool) $data['is_paid'], array_key_exists('payment_note', $data) ? $data['payment_note'] : $p->payment_note);
+                $p->setPayment(...self::paymentArgs($data, $p));
             }
 
             return $list;
