@@ -25,6 +25,7 @@ class AdminController extends Controller
     /** Ustun tartibi (CSV eksport) — anketadagi band tartibida */
     private const CSV_COLUMNS = [
         'status', 'student_group', 'previous_prizewinner', 'needs_visa_invitation',
+        'is_paid', 'paid_at', 'payment_note',
         'family_name_en', 'first_name_en', 'family_name_native', 'first_name_native',
         'birth_date', 'birth_place', 'sex',
         'citizenship', 'other_citizenships', 'ethnicity', 'previous_visits_uz',
@@ -53,6 +54,7 @@ class AdminController extends Controller
                 'participants as leaders_count' => fn ($q) => $q->whereIn('status', ['team_leader', 'team_leader_jury']),
                 'participants as observers_count' => fn ($q) => $q->where('status', 'observer'),
                 'participants as students_count' => fn ($q) => $q->where('status', 'student'),
+                'participants as paid_count' => fn ($q) => $q->where('is_paid', true),
             ])
             ->orderBy('country')
             ->get();
@@ -62,9 +64,82 @@ class AdminController extends Controller
 
     public function showTeam(Team $team): JsonResponse
     {
+        $participants = $team->participants()->orderBy('id')->get();
+
         return response()->json([
             'team' => $team->load('user:id,name,email,phone'),
-            'participants' => ParticipantResource::collection($team->participants()->orderBy('id')->get()),
+            'participants' => ParticipantResource::collection($participants),
+            'payments' => [
+                'paid' => $participants->where('is_paid', true)->count(),
+                'unpaid' => $participants->where('is_paid', false)->count(),
+                'total' => $participants->count(),
+            ],
+        ]);
+    }
+
+    // ---------------------------------------------------------------- payments
+
+    /**
+     * Bir ishtirokchining to'lov holati: to'lov qildi / qilmadi (+ ixtiyoriy izoh, masalan kvitansiya raqami).
+     * PATCH /admin/participants/{id}/payment  { is_paid: true|false, payment_note?: string }
+     */
+    public function updatePayment(Request $request, Participant $participant): JsonResponse
+    {
+        $data = $request->validate([
+            'is_paid' => ['required', 'boolean'],
+            'payment_note' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $participant->setPayment(
+            (bool) $data['is_paid'],
+            array_key_exists('payment_note', $data) ? $data['payment_note'] : $participant->payment_note,
+        );
+
+        return response()->json([
+            'message' => $participant->is_paid ? 'To\'lov belgilandi.' : 'To\'lov bekor qilindi.',
+            'participant' => new ParticipantResource($participant->fresh()),
+        ]);
+    }
+
+    /**
+     * Jamoa ishtirokchilarini bir yo'la belgilash (odatda to'lov jamoa uchun bitta summada keladi).
+     * POST /admin/teams/{id}/payments  { is_paid: true|false, participants?: [id, ...], payment_note?: string }
+     * `participants` berilmasa — jamoaning barcha ishtirokchilari.
+     */
+    public function updateTeamPayments(Request $request, Team $team): JsonResponse
+    {
+        $data = $request->validate([
+            'is_paid' => ['required', 'boolean'],
+            'payment_note' => ['nullable', 'string', 'max:255'],
+            'participants' => ['nullable', 'array'],
+            'participants.*' => ['integer', Rule::exists('participants', 'id')->where('team_id', $team->id)],
+        ]);
+
+        $query = $team->participants()->orderBy('id');
+        if (!empty($data['participants'])) {
+            $query->whereIn('id', $data['participants']);
+        }
+
+        $updated = DB::transaction(function () use ($query, $data) {
+            $list = $query->get();
+            foreach ($list as $p) {
+                $p->setPayment((bool) $data['is_paid'], array_key_exists('payment_note', $data) ? $data['payment_note'] : $p->payment_note);
+            }
+
+            return $list;
+        });
+
+        $all = $team->participants()->orderBy('id')->get();
+
+        return response()->json([
+            'message' => "{$updated->count()} ta ishtirokchi " . ($data['is_paid'] ? 'to\'lov qildi deb belgilandi.' : 'to\'lov qilmadi deb belgilandi.'),
+            'updated' => $updated->count(),
+            'participants' => ParticipantResource::collection($all),
+            'payments' => [
+                'paid' => $all->where('is_paid', true)->count(),
+                'unpaid' => $all->where('is_paid', false)->count(),
+                'total' => $all->count(),
+            ],
         ]);
     }
 
@@ -287,7 +362,7 @@ class AdminController extends Controller
                 $row = [$p->team->country, $p->team->isSubmitted() ? 'yes' : 'no'];
                 foreach (self::CSV_COLUMNS as $col) {
                     $v = $p->{$col};
-                    if ($v instanceof \Carbon\CarbonInterface) $v = $v->format('d.m.Y');
+                    if ($v instanceof \Carbon\CarbonInterface) $v = $col === 'paid_at' ? $v->format('d.m.Y H:i') : $v->format('d.m.Y');
                     if (is_bool($v)) $v = $v ? 'yes' : 'no';
                     $row[] = self::safeCell($v);
                 }

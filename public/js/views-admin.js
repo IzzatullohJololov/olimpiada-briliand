@@ -291,6 +291,68 @@ function deleteDialog(country) {
   });
 }
 
+// ---------------------------------------------------------------- payment (paid / not paid per participant)
+
+/** The paid / not-paid tag; as a button (`clickable`) it opens the payment dialog. */
+function paymentTag(p, clickable = false) {
+  const cls = `tag ${p.is_paid ? 'ok' : 'muted'}${clickable ? ' pay-btn' : ''}`;
+  const label = `${p.is_paid ? I.check : ''}${esc(t(p.is_paid ? 'pay.paid' : 'pay.unpaid'))}`;
+  const title = p.is_paid && p.paid_at ? t('pay.paidAt', { date: fmtDateTime(p.paid_at) }) : t('pay.status');
+  return clickable
+    ? `<button type="button" class="${cls}" data-pay="${p.id}" title="${esc(title)}" aria-label="${esc(t('pay.edit', { name: personName(p) }))}">${label}</button>`
+    : `<span class="${cls}" title="${esc(title)}">${label}</span>`;
+}
+const paymentCell = (p) => `${paymentTag(p, true)}${p.payment_note ? `<span class="pay-note" title="${esc(p.payment_note)}">${esc(p.payment_note)}</span>` : ''}`;
+const paidOf = (ps) => ps.filter((p) => p.is_paid).length;
+const paymentChip = (ps) => `<span class="qchip ${ps.length && paidOf(ps) === ps.length ? '' : 'over'}" id="pay-chip" title="${esc(t('pay.title'))}">${esc(t('pay.summary', { paid: paidOf(ps), total: ps.length }))}</span>`;
+
+/** Paid / not paid + a note for one participant. Resolves to { is_paid, payment_note } or null. */
+function paymentDialog(p) {
+  return new Promise((resolve) => {
+    const dlg = document.createElement('dialog');
+    dlg.className = 'dialog';
+    dlg.setAttribute('aria-labelledby', 'pay-title');
+    dlg.innerHTML = `<h2 id="pay-title">${esc(t('pay.edit', { name: personName(p) }))}</h2>
+      <p class="muted small">${esc(roleLabel(p))}${p.is_paid && p.paid_at ? ` · ${esc(t('pay.paidAt', { date: fmtDateTime(p.paid_at) }))}` : ''}</p>
+      <fieldset class="dlg-field"><legend class="dlg-label">${esc(t('pay.status'))}</legend>
+        <label class="checkbox"><input type="radio" name="pay" value="1" ${p.is_paid ? 'checked' : ''}><span>${esc(t('pay.paid'))}</span></label>
+        <label class="checkbox"><input type="radio" name="pay" value="0" ${p.is_paid ? '' : 'checked'}><span>${esc(t('pay.unpaid'))}</span></label>
+      </fieldset>
+      <div class="dlg-field"><label class="dlg-label" for="pay-note">${esc(t('pay.note'))}</label>
+        <input id="pay-note" class="input" maxlength="255" autocomplete="off" value="${esc(p.payment_note || '')}"></div>
+      <div class="dialog-actions">
+        <button type="button" class="btn btn-ghost" value="cancel">${esc(t('common.cancel'))}</button>
+        <button type="button" class="btn btn-primary" value="ok">${I.check}${esc(t('form.save'))}</button>
+      </div>`;
+    document.body.appendChild(dlg);
+    const done = (v) => { dlg.close(); dlg.remove(); resolve(v); };
+    const save = () => done({ is_paid: dlg.querySelector('input[name=pay]:checked').value === '1', payment_note: dlg.querySelector('#pay-note').value.trim() || null });
+    dlg.addEventListener('click', (e) => {
+      const b = e.target.closest('.dialog-actions button');
+      if (b) { if (b.value === 'ok') save(); else done(null); }
+      else if (e.target === dlg) done(null);
+    });
+    dlg.querySelector('#pay-note').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); save(); } });
+    dlg.addEventListener('cancel', (e) => { e.preventDefault(); done(null); });
+    dlg.showModal();
+    dlg.querySelector('input[name=pay]:checked').focus();
+  });
+}
+
+/** Opens the dialog and saves one participant's payment; resolves to the updated participant or null. */
+async function editPayment(p) {
+  const body = await paymentDialog(p);
+  if (!body) return null;
+  try {
+    const res = await api(`/admin/participants/${p.id}/payment`, { method: 'PATCH', body });
+    toast(t('pay.saved'), 'ok');
+    return res.participant;
+  } catch (err) {
+    toast(err instanceof ApiError && err.status === 422 && Object.keys(err.fields).length ? Object.values(err.fields).join(' ') : err.message, 'error');
+    return null;
+  }
+}
+
 /** Rejection details for the team page, in the admin's interface language. */
 function rejectionHtml(team) {
   const r = team.rejection || {};
@@ -341,8 +403,9 @@ export async function adminTeamsView(ctx) {
     if (st === 'completed' && x.participants_count) return `${openLink(x)}<button type="button" class="btn btn-ghost btn-sm" data-xls="${x.id}">${I.download}Excel</button>${more}`;
     return `${openLink(x)}${more}`;
   };
-  const peopleLine = (x) => `<span class="people" title="${esc(`${t('count.leaders')}: ${x.leaders_count ?? 0} · ${t('count.observers')}: ${x.observers_count ?? 0} · ${t('count.students')}: ${x.students_count ?? 0}`)}">
-    <b>${x.leaders_count ?? 0}</b> ${esc(t('adm.abbr.leaders'))} · <b>${x.observers_count ?? 0}</b> ${esc(t('adm.abbr.observers'))} · <b>${x.students_count ?? 0}</b> ${esc(t('adm.abbr.students'))}</span>`;
+  const peopleLine = (x) => `<span class="people" title="${esc(`${t('count.leaders')}: ${x.leaders_count ?? 0} · ${t('count.observers')}: ${x.observers_count ?? 0} · ${t('count.students')}: ${x.students_count ?? 0} · ${t('count.paid')}: ${x.paid_count ?? 0}/${x.participants_count ?? 0}`)}">
+    <b>${x.leaders_count ?? 0}</b> ${esc(t('adm.abbr.leaders'))} · <b>${x.observers_count ?? 0}</b> ${esc(t('adm.abbr.observers'))} · <b>${x.students_count ?? 0}</b> ${esc(t('adm.abbr.students'))}${x.participants_count
+    ? ` · <b class="${(x.paid_count ?? 0) === x.participants_count ? 'ok' : ''}">${x.paid_count ?? 0}/${x.participants_count}</b> ${esc(t('adm.abbr.paid'))}` : ''}</span>`;
   const rowHtml = (x) => {
     const pending = teamState(x) === 'pending';
     return `<div class="trow ${pending ? 'hot' : ''} ${String(activeId) === String(x.id) ? 'is-active' : ''}" data-row="${x.id}">
@@ -381,7 +444,8 @@ export async function adminTeamsView(ctx) {
     const active = teams.filter((x) => !x.archived_at);
     const sum = (k) => active.reduce((n, x) => n + (x[k] || 0), 0);
     $('#sumline').innerHTML = `<span>${esc(t('adm.tab.active'))} <b>${active.length}</b></span><span>${esc(t('adm.tab.completed'))} <b>${count('completed')}</b></span>
-      <span>${esc(t('admin.kpiParticipants'))} <b>${sum('participants_count')}</b></span><span>${esc(t('admin.kpiStudents'))} <b>${sum('students_count')}</b></span>`;
+      <span>${esc(t('admin.kpiParticipants'))} <b>${sum('participants_count')}</b></span><span>${esc(t('admin.kpiStudents'))} <b>${sum('students_count')}</b></span>
+      <span>${esc(t('admin.kpiPaid'))} <b>${sum('paid_count')}/${sum('participants_count')}</b></span>`;
     renderTabs();
     renderBulk(list);
     const exportable = list.filter((x) => x.participants_count);
@@ -629,13 +693,17 @@ export async function adminTeamView(ctx, { id }) {
       <div class="detail-main">
         ${ps.length ? `<div class="detail-head"><h3>${esc(t('adm.participantsTitle'))} <span class="muted">${ps.length}</span></h3>
           <div class="qchips" title="${esc(t('adm.quotaTitle'))}">${['alpha', 'beta', 'gamma'].map(qchip).join('')}<span class="qchip ${q.total > 6 ? 'over' : ''}">Σ ${q.total}/6${q.extra ? ` <span class="plus">+${q.extra}</span>` : ''}</span></div></div>
+        <div class="pay-row" id="pay-row">${paymentChip(ps)}
+          <button type="button" class="btn btn-ghost btn-sm" data-pay-all="1" ${paidOf(ps) === ps.length ? 'disabled' : ''}>${I.check}${esc(t('pay.allPaid'))}</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-pay-all="0" ${paidOf(ps) ? '' : 'disabled'}>${esc(t('pay.allUnpaid'))}</button></div>
         <div class="table-wrap card-table"><table>
-        <thead><tr><th>#</th><th>${esc(t('col.name'))}</th><th>${esc(t('col.role'))}</th><th>${esc(t('col.birth'))}</th><th>${esc(t('col.citizenship'))}</th><th>${esc(t('col.visa'))}</th><th>${esc(t('admin.files'))}</th></tr></thead>
-        <tbody>${sorted.map((p, i) => `<tr>
+        <thead><tr><th>#</th><th>${esc(t('col.name'))}</th><th>${esc(t('col.role'))}</th><th>${esc(t('col.birth'))}</th><th>${esc(t('col.citizenship'))}</th><th>${esc(t('col.visa'))}</th><th>${esc(t('col.payment'))}</th><th>${esc(t('admin.files'))}</th></tr></thead>
+        <tbody>${sorted.map((p, i) => `<tr data-pid="${p.id}">
           <td class="muted">${i + 1}</td>
           <td><a class="strong" href="${base}/teams/${id}/participants/${p.id}" data-link>${esc(personName(p))}</a><br><span class="muted small">${esc([p.family_name_native, p.first_name_native].filter(Boolean).join(' '))}</span></td>
           <td>${esc(roleLabel(p))}</td><td>${esc(p.birth_date || '')}</td><td>${esc(p.citizenship || '')}</td>
           <td>${esc(t(p.needs_visa_invitation ? 'common.yes' : 'common.no'))}${visaIncomplete(p) ? ` <span class="tag warn">${esc(t('badge.files'))}</span>` : ''}</td>
+          <td class="pay-cell">${paymentCell(p)}</td>
           <td><div class="row-actions left">
             ${p.has_passport_scan ? `<button type="button" class="btn btn-ghost btn-sm" data-file="${p.id}/files/passport">${esc(t('admin.passport'))}</button>` : ''}
             ${p.has_face_photo ? `<button type="button" class="btn btn-ghost btn-sm" data-file="${p.id}/files/face">${esc(t('admin.photo'))}</button>` : ''}
@@ -682,12 +750,42 @@ export async function adminTeamView(ctx, { id }) {
     const b = e.currentTarget; busy(b, true, t('admin.preparing'));
     try { await exportXlsx([det]); } catch (err) { toast(err.message, 'error'); } finally { busy(b, false); }
   });
+
+  // payment: the row, the "paid x of n" chip and the bulk buttons are refreshed in place (no reload, no scroll jump)
+  const applyPayment = (updated) => {
+    updated.forEach((np) => { const p = ps.find((x) => String(x.id) === String(np.id)); if (p) Object.assign(p, np); });
+    updated.forEach((np) => { const cell = ctx.root.querySelector(`tr[data-pid="${np.id}"] .pay-cell`); if (cell) cell.innerHTML = paymentCell(np); });
+    const chip = $('#pay-chip'); if (chip) chip.outerHTML = paymentChip(ps);
+    const allBtn = (v) => ctx.root.querySelector(`[data-pay-all="${v}"]`);
+    if (allBtn('1')) allBtn('1').disabled = paidOf(ps) === ps.length;
+    if (allBtn('0')) allBtn('0').disabled = !paidOf(ps);
+  };
+  const payAll = async (btn, paid) => {
+    const ok = await confirmDialog({ title: t(paid ? 'pay.allPaidTitle' : 'pay.allUnpaidTitle', { n: ps.length }), text: t('pay.allText'), ok: t(paid ? 'pay.allPaid' : 'pay.allUnpaid'), danger: !paid, focusOk: paid });
+    if (!ok) return;
+    busy(btn, true, t('form.saving'));
+    try {
+      const res = await api(`/admin/teams/${id}/payments`, { method: 'POST', body: { is_paid: paid } });
+      applyPayment(res.participants || []);
+      toast(t('pay.savedN', { n: res.updated }), 'ok');
+    } catch (err) { toast(err.message, 'error'); } finally { busy(btn, false); applyPayment([]); }
+  };
+
   ctx.root.addEventListener('click', async (e) => {
     const menu = e.target.closest('[data-menu]');
     if (menu) { toggleMenu(menu); return; }
     if (!e.target.closest('.menu-pop')) closeMenus();
     const a = e.target.closest('[data-act]');
     if (a) { closeMenus(); await perform(a.dataset.act); return; }
+    const pay = e.target.closest('[data-pay]');
+    if (pay) {
+      const p = ps.find((x) => String(x.id) === pay.dataset.pay);
+      const np = p && await editPayment(p);
+      if (np) applyPayment([np]);
+      return;
+    }
+    const all = e.target.closest('[data-pay-all]');
+    if (all) { await payAll(all, all.dataset.payAll === '1'); return; }
     const b = e.target.closest('[data-file]'); if (!b) return;
     const w = window.open('', '_blank');
     try { const url = await fetchBlobUrl(`/admin/participants/${b.dataset.file}`); if (w) w.location = url; }
@@ -725,11 +823,19 @@ export async function adminParticipantView(ctx, { id, pid }) {
   const p = (det.participants || []).find((x) => String(x.id) === String(pid));
   if (!p) { ctx.root.innerHTML = `<div class="card state-box"><h2>${esc(t('err.notFound'))}</h2></div>`; return; }
   const d = fromParticipant(p);
+  const payBlock = () => `<div class="pay-row" id="pay-block">${paymentTag(p, true)}
+    ${p.is_paid && p.paid_at ? `<span class="muted small">${esc(t('pay.paidAt', { date: fmtDateTime(p.paid_at) }))}</span>` : ''}
+    ${p.payment_note ? `<span class="muted small">${esc(p.payment_note)}</span>` : ''}</div>`;
   ctx.root.innerHTML = `
     <a class="back-link" href="${ctx.adminBase}/teams/${id}" data-link>${I.back}${esc(det.team.country)}</a>
-    <div class="page-head"><h2 class="page-title">${esc(personName(p))}</h2><p class="page-lead">${esc(roleLabel(p))}</p></div>
+    <div class="page-head"><h2 class="page-title">${esc(personName(p))}</h2><p class="page-lead">${esc(roleLabel(p))}</p>${payBlock()}</div>
     <form class="readonly-form" onsubmit="return false">${renderSections(d, { readonly: true, fileLinks: true })}</form>`;
   ctx.root.querySelector('form').addEventListener('click', (e) => openFile(e, `/admin/participants/${pid}/files/`));
+  ctx.root.addEventListener('click', async (e) => {
+    if (!e.target.closest('[data-pay]')) return;
+    const np = await editPayment(p);
+    if (np) { Object.assign(p, np); $('#pay-block').outerHTML = payBlock(); }
+  }, { signal: ctx.signal });
 }
 
 // ---------------------------------------------------------------- settings

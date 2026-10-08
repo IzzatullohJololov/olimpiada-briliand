@@ -132,6 +132,29 @@ const T = {
   'badge.visa': ['Visa invitation', 'Визовое приглашение', 'Viza taklifnomasi'],
   'badge.prize': ['Prize-winner', 'Призёр', 'Sovrindor'],
   'badge.files': ['Files missing', 'Нет файлов', 'Fayllar yetishmaydi'],
+  'badge.paid': ['Paid', 'Оплачено', 'Toʻlangan'],
+  'badge.unpaid': ['Not paid', 'Не оплачено', 'Toʻlanmagan'],
+
+  // ---------- Payment (set by the organisers, shown to the team) ----------
+  'pay.title': ['Payment', 'Оплата', 'Toʻlov'],
+  'pay.paid': ['Paid', 'Оплачено', 'Toʻlov qilindi'],
+  'pay.unpaid': ['Not paid', 'Не оплачено', 'Toʻlov qilinmadi'],
+  'pay.paidAt': ['Marked as paid on {date}', 'Отмечено как оплачено: {date}', 'Toʻlangan deb belgilandi: {date}'],
+  'pay.note': ['Note (receipt number, remarks)', 'Примечание (номер квитанции, пометки)', 'Izoh (kvitansiya raqami, qaydlar)'],
+  'pay.edit': ['Payment: {name}', 'Оплата: {name}', 'Toʻlov: {name}'],
+  'pay.status': ['Payment status', 'Статус оплаты', 'Toʻlov holati'],
+  'pay.markPaid': ['Mark as paid', 'Отметить как оплачено', 'Toʻlov qildi deb belgilash'],
+  'pay.markUnpaid': ['Mark as not paid', 'Отметить как не оплачено', 'Toʻlov qilmadi deb belgilash'],
+  'pay.allPaid': ['Mark all as paid', 'Отметить всех как оплачено', 'Hammasini toʻlov qildi deb belgilash'],
+  'pay.allUnpaid': ['Mark all as not paid', 'Отметить всех как не оплачено', 'Hammasini toʻlov qilmadi deb belgilash'],
+  'pay.allPaidTitle': ['Mark all {n} participants as paid?', 'Отметить всех участников ({n}) как оплативших?', 'Barcha {n} ishtirokchi toʻlov qildi deb belgilansinmi?'],
+  'pay.allUnpaidTitle': ['Mark all {n} participants as not paid?', 'Отметить всех участников ({n}) как не оплативших?', 'Barcha {n} ishtirokchi toʻlov qilmadi deb belgilansinmi?'],
+  'pay.allText': ['The team will see the payment status of every participant on its page.', 'Команда увидит статус оплаты каждого участника на своей странице.', 'Jamoa har bir ishtirokchining toʻlov holatini oʻz sahifasida koʻradi.'],
+  'pay.saved': ['The payment status has been saved.', 'Статус оплаты сохранён.', 'Toʻlov holati saqlandi.'],
+  'pay.savedN': ['{n} participant(s) updated.', 'Обновлено участников: {n}.', '{n} ishtirokchi yangilandi.'],
+  'pay.summary': ['Paid {paid} of {total}', 'Оплачено {paid} из {total}', '{total} tadan {paid} tasi toʻlagan'],
+  'pay.teamNote': ['Payment is recorded by the organisers. If a payment is missing here, contact them.', 'Оплату отмечают организаторы. Если оплата не отмечена, свяжитесь с ними.', 'Toʻlovni tashkilotchilar belgilaydi. Toʻlov koʻrinmasa, ular bilan bogʻlaning.'],
+  'count.paid': ['Paid', 'Оплатили', 'Toʻlaganlar'],
 
   // ---------- Enumerations ----------
   'enum.status.team_leader': ['Team leader', 'Руководитель команды', 'Jamoa rahbari'],
@@ -328,6 +351,7 @@ const T = {
   'col.birth': ['Date of birth', 'Дата рождения', 'Tugʻilgan sana'],
   'col.citizenship': ['Citizenship', 'Гражданство', 'Fuqaroligi'],
   'col.visa': ['Visa', 'Виза', 'Viza'],
+  'col.payment': ['Payment', 'Оплата', 'Toʻlov'],
 
 
   // ---------- Olympiad information (www.issp.ac.ru/iao/2026/) ----------
@@ -601,6 +625,8 @@ const T = {
   'adm.abbr.leaders': ['L', 'Р', 'R'],
   'adm.abbr.observers': ['O', 'Н', 'K'],
   'adm.abbr.students': ['S', 'Ш', 'O'],
+  'adm.abbr.paid': ['paid', 'опл.', 'toʻl.'],
+  'admin.kpiPaid': ['Paid', 'Оплатили', 'Toʻlaganlar'],
   'adm.pick': ['Select {country}', 'Выбрать: {country}', 'Tanlash: {country}'],
   'adm.pickAll': ['Select all new applications', 'Выбрать все новые заявки', 'Barcha yangi arizalarni tanlash'],
   'adm.picked': ['{n} selected', 'Выбрано: {n}', 'Tanlandi: {n}'],

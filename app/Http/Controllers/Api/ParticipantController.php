@@ -29,6 +29,10 @@ class ParticipantController extends Controller
         if ($request->filled('status')) {
             $query->where('status', $request->query('status'));
         }
+        // ?paid=1 — to'lov qilganlar, ?paid=0 — qilmaganlar
+        if ($request->filled('paid')) {
+            $query->where('is_paid', $request->boolean('paid'));
+        }
 
         return ParticipantResource::collection($query->get());
     }

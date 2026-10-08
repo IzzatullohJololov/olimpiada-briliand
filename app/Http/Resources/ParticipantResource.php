@@ -18,6 +18,11 @@ class ParticipantResource extends JsonResource
             'previous_prizewinner' => $this->previous_prizewinner,
             'needs_visa_invitation' => $this->needs_visa_invitation,
 
+            // To'lov (faqat administrator o'zgartiradi)
+            'is_paid' => (bool) $this->is_paid,
+            'paid_at' => $this->paid_at?->toIso8601String(),
+            'payment_note' => $this->payment_note,
+
             'family_name_en' => $this->family_name_en,
             'first_name_en' => $this->first_name_en,
             'family_name_native' => $this->family_name_native,

@@ -49,6 +49,8 @@ export async function dashboardView(ctx) {
       p.needs_visa_invitation ? `<span class="tag">${esc(t('badge.visa'))}</span>` : '',
       p.previous_prizewinner ? `<span class="tag">${esc(t('badge.prize'))}</span>` : '',
       visaIncomplete(p) ? `<span class="tag warn">${I.alert}${esc(t('badge.files'))}</span>` : '',
+      // payment is recorded by the organisers; the team only sees it
+      `<span class="tag ${p.is_paid ? 'ok' : 'muted'}" title="${esc(p.is_paid && p.paid_at ? t('pay.paidAt', { date: fmtDateTime(p.paid_at) }) : t('pay.teamNote'))}">${p.is_paid ? I.check : ''}${esc(t(p.is_paid ? 'badge.paid' : 'badge.unpaid'))}</span>`,
     ].join('');
     return `<li class="prow">
       <span class="avatar" aria-hidden="true">${esc(initials(p))}</span>
@@ -79,10 +81,11 @@ export async function dashboardView(ctx) {
     </div>
     ${submitted ? `<div class="mb-24">${note(`<strong>${esc(t('dash.completedTitle'))}</strong><br>${esc(t('dash.lockedNote'))}`, 'ok')}</div>`
       : locked ? `<div class="mb-24">${note(`<strong>${esc(t('reg.closedTitle'))}</strong><br>${esc(t('dash.lockedNote'))}`, 'warn')}</div>` : ''}
-    <dl class="kpis">
+    <dl class="kpis kpis-4">
       <div class="kpi"><dt>${esc(t('count.leaders'))}</dt><dd>${leaders.filter((p) => p.status !== 'observer').length}</dd></div>
       <div class="kpi"><dt>${esc(t('count.observers'))}</dt><dd>${leaders.filter((p) => p.status === 'observer').length}</dd></div>
       <div class="kpi"><dt>${esc(t('count.students'))}</dt><dd>${ps.length - leaders.length}<small>${qs('alpha')} · ${qs('beta')} · ${qs('gamma')}</small></dd></div>
+      <div class="kpi" title="${esc(t('pay.teamNote'))}"><dt>${esc(t('count.paid'))}</dt><dd>${ps.filter((p) => p.is_paid).length}<small>/ ${ps.length}</small></dd></div>
     </dl>
     ${q.issues.length && !locked ? `<div class="mb-24">${note(`<strong>${esc(t('quota.title'))}</strong><ul class="plain">${q.issues.map((m) => `<li>${esc(m)}</li>`).join('')}</ul><span class="small">${esc(t('quota.hint'))}</span>`, 'error')}</div>` : ''}
     ${ps.length ? `<div class="stack-16">${block(t('group.leaders'), leaders)}${GROUP_ORDER.map((g) => block(t(`group.${g}`), byGroup[g])).join('')}
@@ -374,8 +377,9 @@ export async function reviewView(ctx) {
     </section>
     <section class="card">
       <div class="table-wrap"><table>
-        <thead><tr><th>#</th><th>${esc(t('col.name'))}</th><th>${esc(t('col.role'))}</th><th>${esc(t('col.birth'))}</th><th>${esc(t('col.citizenship'))}</th><th>${esc(t('col.visa'))}</th></tr></thead>
-        <tbody>${sorted.map((p, i) => `<tr><td class="muted">${i + 1}</td><td><a href="/participants/${p.id}" data-link>${esc(personName(p))}</a></td><td>${esc(roleLabel(p))}</td><td>${esc(p.birth_date || '')}</td><td>${esc(p.citizenship || '')}</td><td>${esc(t(p.needs_visa_invitation ? 'common.yes' : 'common.no'))}</td></tr>`).join('')}</tbody>
+        <thead><tr><th>#</th><th>${esc(t('col.name'))}</th><th>${esc(t('col.role'))}</th><th>${esc(t('col.birth'))}</th><th>${esc(t('col.citizenship'))}</th><th>${esc(t('col.visa'))}</th><th>${esc(t('col.payment'))}</th></tr></thead>
+        <tbody>${sorted.map((p, i) => `<tr><td class="muted">${i + 1}</td><td><a href="/participants/${p.id}" data-link>${esc(personName(p))}</a></td><td>${esc(roleLabel(p))}</td><td>${esc(p.birth_date || '')}</td><td>${esc(p.citizenship || '')}</td><td>${esc(t(p.needs_visa_invitation ? 'common.yes' : 'common.no'))}</td>
+          <td><span class="tag ${p.is_paid ? 'ok' : 'muted'}">${esc(t(p.is_paid ? 'badge.paid' : 'badge.unpaid'))}</span></td></tr>`).join('')}</tbody>
       </table></div>
     </section>
     <section class="card">

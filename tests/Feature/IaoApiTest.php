@@ -287,4 +287,93 @@ class IaoApiTest extends TestCase
 
         Notification::assertSentTo($user, TeamReopened::class);
     }
+
+    // ---------------------------------------------------------------- to'lov (paid / not paid)
+
+    public function test_team_cannot_set_payment_but_sees_it(): void
+    {
+        $user = $this->makeTeam();
+        Sanctum::actingAs($user);
+
+        // is_paid jamoa tomonidan yuborilsa e'tiborga olinmaydi (guarded + validatsiyada yo'q)
+        $res = $this->postJson('/api/participants', $this->student(['is_paid' => true, 'payment_note' => 'hack']))->assertCreated();
+        $res->assertJsonPath('data.is_paid', false)->assertJsonPath('data.paid_at', null)->assertJsonPath('data.payment_note', null);
+        $id = $res->json('data.id');
+
+        $this->patchJson("/api/participants/{$id}", ['is_paid' => true])->assertOk()->assertJsonPath('data.is_paid', false);
+
+        // Admin endpointi jamoa uchun yopiq
+        $this->patchJson("/api/admin/participants/{$id}/payment", ['is_paid' => true])->assertForbidden();
+    }
+
+    public function test_admin_marks_participant_paid_and_unpaid(): void
+    {
+        $user = $this->makeTeam();
+        Sanctum::actingAs($user);
+        $id = $this->postJson('/api/participants', $this->student())->json('data.id');
+
+        $admin = $this->makeTeam('Admin land', 'admin@example.ug');
+        $admin->forceFill(['is_admin' => true])->save();
+        Sanctum::actingAs($admin);
+
+        $this->patchJson("/api/admin/participants/{$id}/payment", ['is_paid' => 'yes'])->assertStatus(422)->assertJsonValidationErrors('is_paid');
+
+        $this->patchJson("/api/admin/participants/{$id}/payment", ['is_paid' => true, 'payment_note' => 'Receipt #17'])
+            ->assertOk()
+            ->assertJsonPath('participant.is_paid', true)
+            ->assertJsonPath('participant.payment_note', 'Receipt #17');
+        $this->assertNotNull($user->team->participants()->find($id)->paid_at);
+
+        // Jamoa o'z sahifasida ko'radi
+        Sanctum::actingAs($user);
+        $this->getJson("/api/participants/{$id}")->assertOk()->assertJsonPath('data.is_paid', true);
+        $this->getJson('/api/participants?paid=1')->assertOk()->assertJsonCount(1, 'data');
+        $this->getJson('/api/participants?paid=0')->assertOk()->assertJsonCount(0, 'data');
+
+        // Bekor qilish: paid_at tozalanadi, izoh berilmasa saqlanib qoladi
+        Sanctum::actingAs($admin);
+        $this->patchJson("/api/admin/participants/{$id}/payment", ['is_paid' => false])
+            ->assertOk()->assertJsonPath('participant.is_paid', false)->assertJsonPath('participant.paid_at', null)
+            ->assertJsonPath('participant.payment_note', 'Receipt #17');
+
+        // Jamoalar ro'yxatida va CSV'da to'lov ustunlari bor
+        $this->getJson('/api/admin/teams')->assertOk()->assertJsonFragment(['country' => 'Uganda', 'paid_count' => 0]);
+        $csv = $this->get('/api/admin/export/participants.csv')->assertOk()->streamedContent();
+        $this->assertStringContainsString('is_paid', $csv);
+        $this->assertStringContainsString('Receipt #17', $csv);
+    }
+
+    public function test_admin_marks_whole_team_paid(): void
+    {
+        $user = $this->makeTeam();
+        Sanctum::actingAs($user);
+        $a = $this->postJson('/api/participants', $this->leader())->json('data.id');
+        $b = $this->postJson('/api/participants', $this->student())->json('data.id');
+
+        $other = $this->makeTeam('Kenya', 'kenya@example.ke');
+        Sanctum::actingAs($other);
+        $c = $this->postJson('/api/participants', $this->student(['family_name_en' => 'Odhiambo', 'email' => 'o@example.ke']))->json('data.id');
+
+        $admin = $this->makeTeam('Admin land', 'admin@example.ug');
+        $admin->forceFill(['is_admin' => true])->save();
+        Sanctum::actingAs($admin);
+        $teamId = $user->team->id;
+
+        // Boshqa jamoa ishtirokchisini bu jamoa orqali belgilab bo'lmaydi
+        $this->postJson("/api/admin/teams/{$teamId}/payments", ['is_paid' => true, 'participants' => [$c]])
+            ->assertStatus(422)->assertJsonValidationErrors('participants.0');
+
+        $this->postJson("/api/admin/teams/{$teamId}/payments", ['is_paid' => true])
+            ->assertOk()->assertJsonPath('updated', 2)->assertJsonPath('payments.paid', 2)->assertJsonPath('payments.unpaid', 0);
+        $this->assertTrue($user->team->participants()->find($a)->is_paid);
+        $this->assertTrue($user->team->participants()->find($b)->is_paid);
+        $this->assertFalse($other->team->participants()->find($c)->is_paid);
+
+        // Faqat tanlanganlarini bekor qilish
+        $this->postJson("/api/admin/teams/{$teamId}/payments", ['is_paid' => false, 'participants' => [$b]])
+            ->assertOk()->assertJsonPath('updated', 1)->assertJsonPath('payments.paid', 1);
+
+        $this->getJson("/api/admin/teams/{$teamId}")->assertOk()->assertJsonPath('payments.paid', 1)->assertJsonPath('payments.total', 2);
+        $this->getJson('/api/admin/teams')->assertOk()->assertJsonFragment(['country' => 'Uganda', 'paid_count' => 1]);
+    }
 }

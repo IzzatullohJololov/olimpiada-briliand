@@ -75,5 +75,9 @@ Route::middleware('auth:sanctum')->group(function () {
         Route::put('settings', [AdminController::class, 'updateSettings']);
         Route::get('participants/{participant}/files/{type}', [AdminController::class, 'file'])->where('type', 'passport|face');
         Route::get('export/participants.csv', [AdminController::class, 'exportCsv']);
+
+        // To'lov: ishtirokchi to'lov qildi / qilmadi (bitta yoki jamoa bo'yicha bir yo'la)
+        Route::patch('participants/{participant}/payment', [AdminController::class, 'updatePayment'])->whereNumber('participant');
+        Route::post('teams/{team}/payments', [AdminController::class, 'updateTeamPayments']);
     });
 });

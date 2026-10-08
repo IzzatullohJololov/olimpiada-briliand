@@ -16,9 +16,17 @@ Shu arxivdagi fayllarni loyiha ichiga o'sha yo'llar bilan nusxalang
 Keyin `.env` da bazani sozlang va:
 
 ```bash
+cp .env.example .env
+php artisan key:generate
 php artisan migrate
 php artisan serve
 ```
+
+Baza — **MySQL** (`.env.example` da `DB_CONNECTION=mysql`). Avval bo'sh baza yarating
+(`CREATE DATABASE iao CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`) va `.env` dagi
+`DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` ni o'zingiznikiga moslang. Mavjud bazaga yangi
+ustunlar (masalan, ishtirokchilar to'lovi) `php artisan migrate` bilan qo'shiladi, ma'lumotlar yo'qolmaydi.
+Testlar `phpunit.xml` dagi in-memory SQLite'da yuradi, MySQL kerak emas.
 
 Fayllar `storage/app/private` ichida saqlanadi (ochiq emas), yuklab olish faqat API orqali.
 
@@ -44,7 +52,7 @@ Fayllar `storage/app/private` ichida saqlanadi (ochiq emas), yuklab olish faqat 
 | GET | /meta/options | statuslar, guruhlar, dieta, futbolka o'lchamlari |
 | GET / PATCH | /team | jamoa, ishtirokchilar soni, `locked` holati / davlat nomini o'zgartirish |
 | POST | /team/submit | ro'yxatni **yakuniy yuborish** (tekshiradi va jamoani qulflaydi) |
-| GET | /participants?status=student | ro'yxat |
+| GET | /participants?status=student&paid=1 | ro'yxat (`paid=1/0` — to'lov qilgan/qilmaganlar) |
 | POST | /participants | yangi ishtirokchi (multipart/form-data) |
 | GET / PATCH / DELETE | /participants/{id} | ko'rish / yangilash / o'chirish |
 | GET | /participants/{id}/files/passport \| face | yuklangan faylni olish |
@@ -100,7 +108,13 @@ bildirishnomalarga `ShouldQueue` qo'shib, `php artisan queue:work` ishga tushiri
 | GET | /admin/teams/{id} | jamoa va uning barcha ishtirokchilari |
 | POST | /admin/teams/{id}/reopen | yuborilgan jamoani qayta ochish (xato tuzatish uchun) |
 | GET | /admin/participants/{id}/files/passport \| face | istalgan ishtirokchi faylini yuklab olish |
-| GET | /admin/export/participants.csv | hamma ishtirokchilar CSV (Excel'da UTF-8 to'g'ri ochiladi) |
+| GET | /admin/export/participants.csv | hamma ishtirokchilar CSV (Excel'da UTF-8 to'g'ri ochiladi; `is_paid`, `paid_at`, `payment_note` ustunlari bilan) |
+| PATCH | /admin/participants/{id}/payment | ishtirokchi **to'lov qildi / qilmadi**: `{ "is_paid": true, "payment_note": "Kvitansiya №17" }` |
+| POST | /admin/teams/{id}/payments | jamoa ishtirokchilarini bir yo'la belgilash: `{ "is_paid": true, "participants": [1, 2] }` (`participants` bo'lmasa — hammasi) |
+
+**To'lov ustuni.** Har bir ishtirokchida `is_paid` (true/false), `paid_at` (to'langan deb belgilangan vaqt) va `payment_note` (izoh) bor.
+Ularni faqat administrator o'zgartiradi; jamoa mas'uli `POST/PATCH /participants` da yuborsa e'tiborga olinmaydi, lekin
+`GET /participants` javobida holatni ko'radi (saytda ishtirokchi qatorida «To'langan / To'lanmagan» belgisi).
 
 Administrator tayinlash (avval o'sha odam /auth/register qilgan bo'lishi kerak):
 

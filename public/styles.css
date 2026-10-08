@@ -204,6 +204,17 @@ a { color: var(--cyan); }
 .tag { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 600; background: var(--cyan-soft); color: var(--cyan); }
 .tag svg { width: 12px; height: 12px; }
 .tag.warn { background: var(--warning-soft); color: var(--warning); }
+.tag.ok { background: var(--success-soft); color: var(--success); }
+.tag.muted { background: rgba(255,255,255,.04); color: var(--muted); border: 1px solid var(--line-strong); }
+/* payment toggle in the organisers' participant table: looks like a tag, acts like a button */
+.pay-btn { cursor: pointer; border: 1px solid transparent; font: inherit; }
+.pay-btn.tag.muted:hover { border-color: var(--success); color: var(--success); }
+.pay-btn.tag.ok:hover { border-color: var(--warning); }
+.pay-btn:focus-visible { outline: 2px solid var(--cyan); outline-offset: 2px; }
+.pay-note { display: block; color: var(--muted); font-size: 12px; margin-top: 2px; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pay-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.dlg-field { margin-top: 12px; }
+.dlg-field .dlg-label { display: block; margin-bottom: 4px; }
 .badge { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 999px; font-size: 13px; font-weight: 600; white-space: nowrap; }
 .badge svg { width: 14px; height: 14px; }
 .badge.ok { background: var(--success-soft); color: var(--success); }
@@ -510,6 +521,7 @@ body[data-area="admin"] .main { max-width: 1400px; padding-top: 14px; }
 .tstatus { display: grid; gap: 4px; justify-items: start; }
 .people { font-size: 12.5px; color: var(--muted); white-space: nowrap; }
 .people b { color: var(--ink-2); font-weight: 600; }
+.people b.ok { color: var(--success); }
 .tactions { display: flex; gap: 6px; align-items: center; justify-content: flex-end; }
 .tactions .icon-btn { width: 34px; height: 34px; }
 .keys { margin-top: 14px; }

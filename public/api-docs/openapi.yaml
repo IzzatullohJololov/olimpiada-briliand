@@ -99,6 +99,23 @@ components:
           type: boolean
           default: false
           description: Viza taklifnomasi kerakmi
+        is_paid:
+          type: boolean
+          default: false
+          readOnly: true
+          description: To'lov qildi / qilmadi. Faqat administrator o'zgartiradi (`PATCH /admin/participants/{id}/payment`); jamoa yuborsa e'tiborga olinmaydi.
+        paid_at:
+          type: string
+          format: date-time
+          nullable: true
+          readOnly: true
+          description: To'langan deb belgilangan vaqt (ISO 8601)
+        payment_note:
+          type: string
+          nullable: true
+          maxLength: 255
+          readOnly: true
+          description: Tashkilotchilar izohi (kvitansiya raqami va h.k.)
         family_name_en:
           type: string
           description: 1.1 Familiya (inglizcha). Faqat 26 ta lotin harfi; faqat BOSH HARFLARDA yozish rad etiladi
@@ -1291,6 +1308,9 @@ paths:
                         type: integer
                       students_count:
                         type: integer
+                      paid_count:
+                        type: integer
+                        description: To'lov qilgan ishtirokchilar soni
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
@@ -1350,6 +1370,115 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           $ref: '#/components/responses/NotFound'
+  /admin/participants/{id}/payment:
+    patch:
+      tags:
+      - Admin
+      summary: Ishtirokchi to'lovi — qildi / qilmadi
+      description: |
+        To'lov holatini belgilaydi. `is_paid=true` bo'lganda `paid_at` bir marta qo'yiladi (qayta saqlashda o'zgarmaydi),
+        `false` bo'lganda tozalanadi. `payment_note` yuborilmasa eski izoh saqlanib qoladi; bo'sh satr yuborilsa o'chiriladi.
+      security: *id008
+      parameters:
+      - *id009
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - is_paid
+              properties:
+                is_paid:
+                  type: boolean
+                payment_note:
+                  type: string
+                  nullable: true
+                  maxLength: 255
+                  example: Kvitansiya №17
+      responses:
+        '200':
+          description: Saqlandi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  participant:
+                    $ref: '#/components/schemas/Participant'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
+  /admin/teams/{id}/payments:
+    post:
+      tags:
+      - Admin
+      summary: Jamoa ishtirokchilarini bir yo'la to'lov qildi / qilmadi deb belgilash
+      description: '`participants` berilmasa — jamoaning barcha ishtirokchilari. Boshqa jamoa ishtirokchisi id''si 422 qaytaradi.'
+      security: *id008
+      parameters:
+      - *id009
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - is_paid
+              properties:
+                is_paid:
+                  type: boolean
+                participants:
+                  type: array
+                  items:
+                    type: integer
+                  description: Faqat shu ishtirokchilar (ixtiyoriy)
+                payment_note:
+                  type: string
+                  nullable: true
+                  maxLength: 255
+      responses:
+        '200':
+          description: Saqlandi
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  updated:
+                    type: integer
+                  participants:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Participant'
+                  payments:
+                    type: object
+                    properties:
+                      paid:
+                        type: integer
+                      unpaid:
+                        type: integer
+                      total:
+                        type: integer
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '422':
+          $ref: '#/components/responses/Validation'
   /admin/participants/{id}/files/{type}:
     get:
       tags:
