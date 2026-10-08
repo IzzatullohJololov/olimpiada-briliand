@@ -22,6 +22,12 @@ php artisan migrate
 php artisan serve
 ```
 
+**Sayt (frontend) qayerda?** `public/` papkasida — `index.html`, `js/`, `styles.css`, `config.js`. Alohida build kerak emas.
+`php artisan serve` dan keyin brauzerda `http://127.0.0.1:8000` ni oching: Laravel saytni ham, `/api` ni ham birga beradi
+(`routes/web.php` dagi fallback marshrut; `public/config.js` 8xxx portda `apiBase` ni `/api` qiladi).
+Administrator paneli `http://127.0.0.1:8000/<maxfiy-manzil>` da (hash `public/config.js` da). Prod'da nginx/Apache `public/` ni
+to'g'ridan-to'g'ri beradi, bo'lmagan yo'llarni `index.php` ga yo'naltiradi.
+
 Baza — **MySQL** (`.env.example` da `DB_CONNECTION=mysql`). Avval bo'sh baza yarating
 (`CREATE DATABASE iao CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`) va `.env` dagi
 `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` ni o'zingiznikiga moslang. Mavjud bazaga yangi

@@ -1,10 +1,13 @@
 <?php
 
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
-Route::get('/', function () {
-    return view('welcome');
-});
+// Sayt (public/index.html) — bitta sahifali ilova. Prod'da nginx/Apache uni to'g'ridan-to'g'ri beradi;
+// `php artisan serve` da esa Laravel beradi, shunda http://127.0.0.1:8000 da sayt ham, API ham birga ishlaydi.
+$spa = fn () => response()->file(public_path('index.html'), ['Cache-Control' => 'no-cache']);
+
+Route::get('/', $spa);
 
 Route::get('/email-verified', fn () => response(<<<'HTML'
 <!doctype html><html lang="uz"><head><meta charset="utf-8">
@@ -40,3 +43,11 @@ document.getElementById('go').onclick=async()=>{
 };
 </script></body></html>
 HTML));
+
+// Qolgan barcha manzillar (/login, /participants/5, /<admin-secret> ...) — SPA'ning o'z router'i ochadi.
+// /api/* uchun esa oddiy 404 (JSON) qaytadi.
+Route::fallback(function (Request $request) use ($spa) {
+    abort_if($request->is('api/*'), 404);
+
+    return $spa();
+});

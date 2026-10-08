@@ -1,7 +1,10 @@
 // Deployment settings.
 window.IAO_CONFIG = {
-  // On olympiad.brilliant-edc.uz the site and the API share one domain; local development uses the live API.
-  apiBase: /^(localhost|127\.0\.0\.1)$/.test(location.hostname) ? 'https://olympiad.brilliant-edc.uz/api' : '/api',
+  // On olympiad.brilliant-edc.uz the site and the API share one domain, so the API is at /api.
+  // Locally with `php artisan serve` (http://127.0.0.1:8000) Laravel serves the site too, so /api again.
+  // Frontend-only development (Live Server etc. on localhost without an 8xxx port) talks to the live API.
+  apiBase: /^(localhost|127\.0\.0\.1)$/.test(location.hostname) && !/^8\d{3}$/.test(location.port)
+    ? 'https://olympiad.brilliant-edc.uz/api' : '/api',
 
   // The organisers' panel opens only at a secret address: https://<site>/<secret>.
   // Only the SHA-256 hash of <secret> is stored here, so the address cannot be
